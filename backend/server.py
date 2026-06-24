@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
+import asyncio
 import base64
 import json
 import logging
@@ -10,9 +11,10 @@ import uuid
 import tempfile
 from pathlib import Path
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from datetime import datetime, timezone
 
+import requests as http_lib
 from emergentintegrations.llm.chat import LlmChat, UserMessage, FileContentWithMimeType
 
 
@@ -96,15 +98,12 @@ DLA KAŻDEJ PACZKI WYDOBĄDŹ:
 - "package_numbers": lista numerów paczek (np. ["PX7565795355"]). Jeden wiersz = zwykle jeden numer.
 - "is_cod": true jeśli w linii trackingowej jest słowo "pobr"; w przeciwnym razie false
 - "cod_amount": 0 (kwoty NIE są pokazane w tym manifeście)
-- "lat": szerokość geograficzna adresu jako float (WGS84). Najlepsze przybliżenie z Twojej wiedzy o polskiej geografii. Np. 53.4285 dla Szczecina.
-- "lng": długość geograficzna adresu jako float. Np. 14.5528 dla Szczecina.
 
 KRYTYCZNE ZASADY:
 1. ZACHOWAJ DOKŁADNĄ KOLEJNOŚĆ Z MANIFESTU — platforma źródłowa już zoptymalizowała trasę, NIE sortuj ponownie.
 2. WYDOBĄDŹ WSZYSTKIE STOPY — nagłówek mówi ile ich jest ("Stops: 104"). Nie pomijaj żadnego.
 3. Polskie znaki (ł, ś, ż, ć, ń, ó, ą, ę) bywają popsute w PDF — odtwórz je tam gdzie się da (np. "Wi niewski" → "Wiśniewski", "Dor czenie" → "Doręczenie", "Grayna" → "Grażyna", "ZAK AD" → "ZAKŁAD").
-4. Współrzędne lat/lng podaj zawsze — jeśli nie znasz dokładnego budynku, podaj koordynaty środka ulicy lub dzielnicy. Jeśli adres jest niejasny, podaj koordynaty centrum miasta.
-5. Zwróć WYŁĄCZNIE poprawny JSON. Żadnego komentarza, żadnego markdown.
+4. Zwróć WYŁĄCZNIE poprawny JSON. Żadnego komentarza, żadnego markdown.
 
 FORMAT WYJŚCIA:
 {
@@ -116,13 +115,82 @@ FORMAT WYJŚCIA:
       "phone": "",
       "package_numbers": ["PX7565795355"],
       "is_cod": false,
-      "cod_amount": 0,
-      "lat": 53.4285,
-      "lng": 14.5528
+      "cod_amount": 0
     }
   ]
 }
 """
+
+
+# ---------- Geocoding (Photon by Komoot, with Nominatim fallback) ----------
+PHOTON_URL = "https://photon.komoot.io/api/"
+NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
+GEO_UA = "KurierNawigacja/1.0 (courier app)"
+
+
+def _geocode_sync(addr: str) -> Optional[Tuple[float, float]]:
+    """Try Photon first (no strict rate limit), then Nominatim as fallback."""
+    if not addr:
+        return None
+
+    queries = [addr + ", Polska", addr]
+    if "," in addr:
+        parts = [p.strip() for p in addr.split(",") if p.strip()]
+        if len(parts) >= 2:
+            queries.append(", ".join(parts[-2:]) + ", Polska")
+
+    # 1) Photon
+    for q in queries:
+        try:
+            r = http_lib.get(
+                PHOTON_URL,
+                params={"q": q, "limit": 1, "lang": "default"},
+                headers={"User-Agent": GEO_UA},
+                timeout=8,
+            )
+            if r.status_code != 200:
+                continue
+            data = r.json()
+            feats = data.get("features") or []
+            if feats:
+                coords = feats[0].get("geometry", {}).get("coordinates")
+                # only accept Polish hits (Photon doesn't have countrycode filter)
+                country = (feats[0].get("properties", {}) or {}).get("country") or ""
+                if coords and len(coords) >= 2 and ("Pol" in country or country == ""):
+                    return float(coords[1]), float(coords[0])
+        except Exception:
+            continue
+
+    # 2) Nominatim fallback (rate-limited, last resort)
+    for q in queries[:1]:
+        try:
+            r = http_lib.get(
+                NOMINATIM_URL,
+                params={"q": q, "format": "json", "limit": 1, "countrycodes": "pl"},
+                headers={"User-Agent": GEO_UA, "Accept-Language": "pl"},
+                timeout=10,
+            )
+            if r.status_code != 200:
+                continue
+            data = r.json()
+            if data:
+                return float(data[0]["lat"]), float(data[0]["lon"])
+        except Exception:
+            continue
+    return None
+
+
+async def geocode_stops(stops: List["Stop"]) -> None:
+    """Geocode all stops in parallel (Photon allows ~10 req/s; we use 6 concurrent)."""
+    sem = asyncio.Semaphore(6)
+
+    async def _g(s: "Stop") -> None:
+        async with sem:
+            coords = await asyncio.to_thread(_geocode_sync, s.address)
+            if coords:
+                s.lat, s.lng = coords
+
+    await asyncio.gather(*[_g(s) for s in stops])
 
 
 def _extract_json(raw: str) -> dict:
@@ -220,16 +288,6 @@ async def upload_manifest(req: ManifestUploadRequest):
         except Exception:
             order_val = i + 1
         is_cod_flag = bool(s.get("is_cod", False)) or cod > 0
-        lat_val: Optional[float] = None
-        lng_val: Optional[float] = None
-        try:
-            if s.get("lat") is not None:
-                lat_val = float(s.get("lat"))
-            if s.get("lng") is not None:
-                lng_val = float(s.get("lng"))
-        except Exception:
-            lat_val = None
-            lng_val = None
         stops.append(Stop(
             order=order_val,
             address=str(s.get("address", "")).strip(),
@@ -238,9 +296,13 @@ async def upload_manifest(req: ManifestUploadRequest):
             package_numbers=[str(x) for x in (s.get("package_numbers") or [])],
             cod_amount=cod,
             is_cod=is_cod_flag,
-            lat=lat_val,
-            lng=lng_val,
         ))
+
+    # Geocode all addresses via OSM Nominatim (free, no key required)
+    try:
+        await geocode_stops(stops)
+    except Exception:
+        logging.exception("Geocoding failed (continuing with empty coords)")
 
     name = (req.name or "").strip() or f"Trasa {datetime.now(timezone.utc).strftime('%d.%m.%Y %H:%M')}"
     route = Route(name=name, stops=stops)
@@ -277,6 +339,21 @@ async def delete_route(route_id: str):
     if res.deleted_count == 0:
         raise HTTPException(status_code=404)
     return {"ok": True}
+
+
+@api_router.post("/routes/{route_id}/regeocode")
+async def regeocode_route(route_id: str):
+    """Re-run Nominatim geocoding for every stop on a route. Useful for routes saved before the geocoder existed."""
+    route = await db.routes.find_one({"id": route_id}, {"_id": 0})
+    if not route:
+        raise HTTPException(status_code=404)
+    stops = [Stop(**s) for s in route.get("stops", [])]
+    await geocode_stops(stops)
+    await db.routes.update_one(
+        {"id": route_id},
+        {"$set": {"stops": [s.model_dump() for s in stops]}},
+    )
+    return {"ok": True, "stops": len(stops), "geocoded": sum(1 for s in stops if s.lat is not None)}
 
 
 @api_router.get("/routes/{route_id}/stops/{stop_id}")

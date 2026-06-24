@@ -90,6 +90,8 @@ export default function NavigateScreen() {
   const [stepIndex, setStepIndex] = useState(1); // skip depart
   const [error, setError] = useState<string | null>(null);
   const [navigating, setNavigating] = useState(false);
+  const [heading, setHeading] = useState<number | null>(null);
+  const [follow, setFollow] = useState(true);
 
   // Load route data
   useEffect(() => {
@@ -271,6 +273,8 @@ export default function NavigateScreen() {
             target={currentStop}
             next={nextStops}
             polyline={navigating ? (polyline || undefined) : undefined}
+            heading={navigating ? heading : null}
+            follow={navigating && follow}
           />
         )}
 
@@ -323,12 +327,11 @@ export default function NavigateScreen() {
             </View>
             {navigating && user && (
               <TouchableOpacity
-                onPress={requestLocation}
-                style={styles.iconBtn}
-                disabled={permRequesting}
+                onPress={() => setFollow((f) => !f)}
+                style={[styles.iconBtn, follow && styles.iconBtnActive]}
                 testID="recenter-btn"
               >
-                <Ionicons name="locate" size={22} color={colors.text} />
+                <Ionicons name={follow ? "navigate" : "navigate-outline"} size={22} color={follow ? "#fff" : colors.text} />
               </TouchableOpacity>
             )}
           </View>
@@ -513,6 +516,7 @@ const styles = StyleSheet.create({
     width: 40, height: 40, borderRadius: 20,
     alignItems: "center", justifyContent: "center",
   },
+  iconBtnActive: { backgroundColor: colors.primary },
   topInfo: { flex: 1, paddingHorizontal: 8 },
   topTitle: { fontSize: 15, fontWeight: "900", color: colors.text },
   topSubtitle: { fontSize: 12, color: colors.textSecondary, marginTop: 1 },
