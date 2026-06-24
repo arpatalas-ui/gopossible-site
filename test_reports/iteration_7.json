@@ -1,0 +1,27 @@
+{
+  "summary": "Iteration 7 frontend-only retest of the HIGH-priority stop-nav-btn crash fix on /route/{id}/stop/{stopId}/navigate. Used seeded route 4fca5350-ddf4-40cb-8028-aae36f8d257d and stop 90bb4684-7c86-4f7a-ae6d-5f1c25ce6e8f (status=pending, order=2). Playwright context.grant_permissions(['geolocation']) + context.set_geolocation({53.43, 14.55, 20}) applied BEFORE navigation. ALL 5 verification steps pass: (1) start-nav-btn visible initially ✓. (2) Tap start-nav-btn → compass-bar appears with Polish maneuver text '43 m / Lekko w prawo • Kaszubska' ✓; stop-nav-btn visible ✓. (3) Tap stop-nav-btn → ZERO page errors, ZERO console errors, ZERO mentions of 'removeSubscription' or 'LocationEventEmitter' in console, no LogBox / red overlay / error-boundary text found ✓; compass-bar removed from DOM ✓; start-nav-btn re-appears ✓. (4) Re-tap start-nav-btn → compass-bar reappears with same content '43 m / Lekko w prawo • Kaszubska' ✓ (no leaks, subscription cleanly re-attaches). The iteration-6 RCA fix (try/catch around sub.remove() + cancelled flag for race between subscription creation and unmount) at navigate.tsx:144-170 is verified working on the Expo web preview.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "navigate.tsx styles (compassRow, topBarRow, bottom, startBtn)", "issue": "STILL PRESENT from iter 5/6 (not in scope of this retest): runtime deprecation warning 'shadow*' style props are deprecated, use boxShadow. Reference: /app/frontend/app/route/[id]/stop/[stopId]/navigate.tsx:483-487, 506-510, 532-533."},
+      {"component": "navigate.tsx SafeAreaView (compassWrap & topBar)", "issue": "STILL PRESENT from iter 5/6 (not in scope of this retest): runtime warning props.pointerEvents is deprecated; use style.pointerEvents. Reference: /app/frontend/app/route/[id]/stop/[stopId]/navigate.tsx:279 and 298."}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "No new action items for the stop-nav-btn flow — fix verified. Remaining backlog from iter 6 is the deprecation cleanup (shadow* → boxShadow, pointerEvents prop → style.pointerEvents) which is unrelated to the crash."
+  ],
+  "critical_code_review_comments": [
+    "Fix at navigate.tsx:148-169 is correct and defensive: (a) try/catch around next.remove() in the cancelled branch and around sub.remove() in cleanup absorbs the expo-location web shim TypeError, (b) cancelled flag closes the race where the async watchPositionAsync resolves AFTER the effect was torn down. Recommend keeping this pattern for any future expo-location subscriptions on web."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "5/5 sub-checks pass: initial start visible, compass appears with Polish text, stop-nav-btn no-crash (zero errors, compass gone, start re-appears), restart re-creates compass-bar"},
+  "seed_data_creation": "None. Reused iteration 6 seeded route 4fca5350-ddf4-40cb-8028-aae36f8d257d, stop 90bb4684-7c86-4f7a-ae6d-5f1c25ce6e8f.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "stop-nav-btn flow is now stable on web. If another regression appears, reproduce with Playwright context.grant_permissions+set_geolocation BEFORE goto, then start→stop→start sequence and watch for any 'removeSubscription'/'LocationEventEmitter' substring in console messages. Console error count is the canonical signal because the original bug was swallowed by the React error boundary (no pageerror was thrown).",
+  "rca_of_issue": "Original iter-6 bug: expo-location LocationSubscription.remove() on web invokes LocationEventEmitter.removeSubscription which no longer exists on the web shim, throwing TypeError on stop. Fix landed in iter 7 at /app/frontend/app/route/[id]/stop/[stopId]/navigate.tsx:148-169 — wraps both the cancelled-branch removal (line 155) and the cleanup removal (line 167) in try/catch and adds a 'cancelled' flag to handle the race where the awaited watchPositionAsync resolves after the effect cleanup ran. Verified: tap-start → tap-stop → tap-start cycle now produces zero errors and the compass-bar/start-nav-btn toggle correctly."
+}

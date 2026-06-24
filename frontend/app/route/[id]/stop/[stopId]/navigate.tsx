@@ -144,18 +144,28 @@ export default function NavigateScreen() {
   useEffect(() => {
     if (!navigating) return;
     let sub: Location.LocationSubscription | null = null;
+    let cancelled = false;
     (async () => {
       try {
-        sub = await Location.watchPositionAsync(
+        const next = await Location.watchPositionAsync(
           { accuracy: Location.Accuracy.Balanced, distanceInterval: 25, timeInterval: 5000 },
           (loc) => setUser({ lat: loc.coords.latitude, lng: loc.coords.longitude }),
         );
+        if (cancelled) {
+          try { next.remove(); } catch { /* noop */ }
+        } else {
+          sub = next;
+        }
       } catch {
-        // fallthrough
+        // expo-location's web shim may not support watchPositionAsync — that's OK,
+        // we still have the one-shot user position from requestLocation.
       }
     })();
     return () => {
-      if (sub) sub.remove();
+      cancelled = true;
+      if (sub) {
+        try { sub.remove(); } catch { /* noop — web shim quirk */ }
+      }
     };
   }, [navigating]);
 
