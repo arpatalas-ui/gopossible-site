@@ -1,0 +1,31 @@
+{
+  "summary": "Bug fix verification PASSED. The web upload regression ('expo-file-system.readAsStringAsync is not available on web') is fully resolved. Tested on mobile viewport (390x844) at https://courier-nav-4.preview.emergentagent.com. Generated a Polish manifest PDF in /tmp via reportlab (3 stops: Marszałkowska Warszawa, Puławska Warszawa, Floriańska Kraków with COD 120.50/0/85.00 PLN). Triggered the hidden file input that expo-document-picker mounts on web via Playwright page.expect_file_chooser(), then clicked upload-manifest-btn. Flow: (1) NO expo-file-system error thrown — the Platform.OS==='web' branch in index.tsx using FileReader/blobToBase64 is exercised, (2) 'AI parsuje manifest…' loading state appeared with ActivityIndicator (verified visually), (3) Gemini parsed the PDF and app auto-navigated to /route/85b3173d-244f-4a80-96fa-40710fd60b3b within ~10s, (4) route screen rendered all 3 stops with correct Polish diacritics (Floriańska, Marszałkowska, Puławska, Wiśniewski) and total 205.50 PLN pobrania. Home page empty/list state also rendered correctly (testID=home-screen + previous seeded TEST_TRASA_UI card visible).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "global", "issues": ["Pre-existing non-blocking RN-web warning: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' (already reported in iteration_1).", "Pre-existing non-blocking RN-web warning: 'props.pointerEvents is deprecated. Use style.pointerEvents.'"]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/tmp/test_manifest_web.pdf (PDF used in upload)",
+    "/tmp/01_home_before.png",
+    "/tmp/02_loading.png",
+    "/tmp/03_route_screen.png"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Fix in /app/frontend/app/index.tsx is correct and minimal: Platform.OS === 'web' branch uses asset.file (Blob) or fetches asset.uri then FileReader.readAsDataURL; native branch lazy-requires 'expo-file-system/legacy' inside the function (no top-level import) so the web bundle never references the unavailable native API.",
+    "blobToBase64 helper correctly strips the 'data:<mime>;base64,' prefix before sending to backend.",
+    "No console error or page error related to expo-file-system observed during the flow."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "not retested (per request: frontend only)", "frontend": "100% — bug fix verified, all assertions passed"},
+  "seed_data_creation": "Created one additional route via real /api/manifest/upload during this run (id 85b3173d-244f-4a80-96fa-40710fd60b3b, name 'test_manifest_web', 3 stops, 205.50 PLN COD). Previous TEST_TRASA_UI route from iteration_1 still present.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Web upload via expo-document-picker + FileReader works. To re-verify, use page.expect_file_chooser() (NOT set_input_files on a found locator — the input is dynamically injected on click). Reuse /tmp/test_manifest_web.pdf or regenerate with the reportlab snippet in this iteration. Backend manifest parsing consumes one Gemini call (~5-10s) per upload.",
+  "rca_of_issue": "Original bug: top-level `import * as FileSystem from 'expo-file-system/legacy'` was always evaluated, including in the web bundle. On web, expo-file-system has no implementation for readAsStringAsync, so calling it threw the unsupported-platform error. Fix (verified): branch by Platform.OS — on web read the picked file as a Blob via FileReader.readAsDataURL and strip the data-URL prefix to obtain base64; on native, require('expo-file-system/legacy') lazily inside the handler so it's tree-shaken out of the web bundle. Reproduction prior to fix: open web preview, click 'Wgraj Manifest PDF', select any PDF. After fix: same flow returns base64 from FileReader and POSTs to /api/manifest/upload, app navigates to /route/{id} successfully."
+}

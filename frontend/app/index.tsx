@@ -8,16 +8,30 @@ import {
   ActivityIndicator,
   RefreshControl,
   Image,
+  Platform,
 } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as DocumentPicker from "expo-document-picker";
-import * as FileSystem from "expo-file-system/legacy";
 import { Ionicons } from "@expo/vector-icons";
 
 import { api, Route } from "@/src/api";
 import { colors } from "@/src/theme";
 import { CodBadge } from "@/src/components/CodBadge";
+
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error || new Error("FileReader failed"));
+    reader.onload = () => {
+      const result = reader.result as string;
+      // strip "data:<mime>;base64," prefix
+      const idx = result.indexOf("base64,");
+      resolve(idx >= 0 ? result.slice(idx + 7) : result);
+    };
+    reader.readAsDataURL(blob);
+  });
+}
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -57,9 +71,24 @@ export default function HomeScreen() {
       const asset = res.assets[0];
       setUploading(true);
       setError(null);
-      const base64 = await FileSystem.readAsStringAsync(asset.uri, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
+
+      let base64: string;
+      if (Platform.OS === "web") {
+        // On web, DocumentPicker returns a `file` (Blob/File) or a blob URL we can fetch.
+        // Prefer the File when available, otherwise fetch the uri.
+        // @ts-expect-error - "file" is provided by expo-document-picker on web only
+        const webFile: Blob | undefined = asset.file;
+        const blob = webFile || (await (await fetch(asset.uri)).blob());
+        base64 = await blobToBase64(blob);
+      } else {
+        // Native: lazy-require expo-file-system so web bundle stays clean.
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const FileSystem = require("expo-file-system/legacy");
+        base64 = await FileSystem.readAsStringAsync(asset.uri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+      }
+
       const route = await api.uploadManifest(base64, asset.name?.replace(/\.pdf$/i, ""));
       await load();
       router.push(`/route/${route.id}`);
