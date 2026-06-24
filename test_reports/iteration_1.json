@@ -1,0 +1,42 @@
+{
+  "summary": "Polish Courier app first-iteration end-to-end testing. Backend: 14/14 pytest tests passed including real Gemini 2.5-flash manifest parsing of a synthetic reportlab-generated Polish PDF (3 stops with addresses, recipients, package numbers, COD amounts). Frontend: all critical UI flows verified on mobile viewport (390x844) — home renders 'Moje Trasy' + upload-manifest-btn + route card, route screen lists 3 stop-rows with COD badges and total '239.50 PLN pobrania', stop screen shows Nawiguj/Dostarczono/Nieobecny with correct Polish labels, absent screen correctly toggles between send-sms-btn (when phone present) and 'Oznacz jako nieobecny' fallback (when no phone) with Polish SMS preview text. Stop state machine (deliver / absent / reset) verified via API with persistence GET checks. No deprecated Expo packages (expo-av/expo-barcode-scanner/expo-background-fetch) detected.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "app shutdown handler", "issue": "Uses deprecated @app.on_event('shutdown') in server.py:312. FastAPI recommends lifespan context manager. Non-blocking."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "global", "issues": ["React Native console warning: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' — appears from styles in index.tsx, route/[id]/index.tsx (shadowColor/shadowOpacity/shadowRadius/shadowOffset). Migrate to boxShadow on web or accept the warning. Non-blocking."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_courier_api.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Optional: migrate FastAPI startup/shutdown handler to lifespan API to remove DeprecationWarning.",
+    "Optional: replace shadow* StyleSheet props with boxShadow to silence RN web deprecation warnings on home/route screens."
+  ],
+  "critical_code_review_comments": [
+    "server.py is well-structured and uses async motor properly; ObjectId is correctly excluded via projection {'_id': 0}.",
+    "Heavy fields (photo_base64/signature_base64) are stripped from list/detail responses — good.",
+    "Frontend correctly reads EXPO_PUBLIC_BACKEND_URL (required prefix for Expo runtime env exposure); all API calls go through /api prefix.",
+    "All interactive elements have testID attributes (upload-manifest-btn, route-card-{id}, stop-row-{id}, navigate-btn, mark-delivered-btn, mark-absent-btn, send-sms-btn, back-to-route-btn, back-btn).",
+    "Polish UI labels render correctly with diacritics (ą,ć,ę,ł,ó,ś,ź,ż)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/__init__.py (created empty)",
+    "/app/backend/tests/test_courier_api.py (created with 14 pytest tests, includes reportlab PDF synth)"
+  ],
+  "success_rate": {"backend": "100% (14/14)", "frontend": "100% (all critical flows passed)"},
+  "seed_data_creation": "Seeded one route via real /api/manifest/upload using reportlab-generated Polish PDF (3 stops: Kraków no-phone COD 89.50, Warszawa Marszałkowska phone COD 150.00, Warszawa Puławska phone COD 0). Route id 32ee7b77-dcd5-4e72-83ae-278a48f88f95 still in MongoDB at end of UI run. Pytest session-fixture seeds and cleans up its own route to avoid pollution.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Reuse /app/backend/tests/test_courier_api.py for regression — generates its own PDF and consumes one Gemini call per session. For UI: route id 32ee7b77-dcd5-4e72-83ae-278a48f88f95 currently exists in DB (TEST_TRASA_UI) and can be reused, or seed a fresh route by reusing _make_polish_manifest_pdf() helper. Frontend uses EXPO_PUBLIC_BACKEND_URL (not EXPO_BACKEND_URL) per Expo convention.",
+  "rca_of_issue": "N/A — no bugs found."
+}
