@@ -42,6 +42,9 @@ class Stop(BaseModel):
     phone: str = ""
     package_numbers: List[str] = []
     cod_amount: float = 0.0
+    is_cod: bool = False
+    lat: Optional[float] = None
+    lng: Optional[float] = None
     status: str = "pending"  # pending | delivered | absent
     photo_base64: Optional[str] = None
     signature_base64: Optional[str] = None
@@ -70,26 +73,52 @@ class StopAbsentRequest(BaseModel):
     note: Optional[str] = None
 
 
-PARSING_SYSTEM_PROMPT = """Jesteś parserem polskich manifestów kurierskich. Otrzymujesz plik PDF z listą przesyłek kuriera.
+PARSING_SYSTEM_PROMPT = """Jesteś parserem polskich manifestów kurierskich (m.in. format 4BIS / Spoke).
+Manifest to PDF z listą paczek w formie tabeli. Każda paczka ma:
+- numer porządkowy (1, 2, 3 ... aż do "Stops: N" z nagłówka)
+- imię i nazwisko / nazwa odbiorcy (czasem w wielu liniach)
+- adres dostawy (ulica, numer, mieszkanie, miasto, ", Poland")
+- linia trackingowa z numerem paczki (np. PX7565795355, CD120793236BE, 00359007733820257041) i flagami statusu
 
-Wyodrębnij listę wszystkich przesyłek/stopów. Dla każdego stopu zwróć:
-- "address": pełny adres (ulica i numer, kod pocztowy, miasto)
-- "recipient_name": imię i nazwisko odbiorcy (lub nazwa firmy)
-- "phone": numer telefonu jeśli widoczny (w formacie +48...), w przeciwnym razie pusty string
-- "package_numbers": lista numerów paczek/przesyłek (jako stringi)
-- "cod_amount": kwota pobrania w PLN jako liczba (0 jeśli brak pobrania / przesyłka opłacona)
+FLAGI STATUSU W LINII TRACKINGOWEJ:
+- "pobr" lub ". pobr;" lub " pobr;" → przesyłka za pobraniem (POBRANIE). Ustaw "is_cod": true.
+- "Awizo" → awizacja
+- "Zwrot" → zwrot
+- "OwPZ" / "OwAPM" / "Dostarczenie do punktu" / "Dostarczenie do APM" → paczkomat / punkt
+- "Dor czenie" / "Doręczenie" / "Dorczenie" → standardowa dostawa
+- "Nadanie u kuriera" → tylko status w systemie, nie zmienia parsowania
 
-Uporządkuj stopy w logicznej kolejności dostaw: najpierw grupuj po mieście, potem po kodzie pocztowym, potem po ulicy, by minimalizować dystans.
+DLA KAŻDEJ PACZKI WYDOBĄDŹ:
+- "order": numer porządkowy z manifestu (int)
+- "address": pełny adres BEZ ", Poland" na końcu. Zachowaj nr ulicy, nr mieszkania, miasto.
+- "recipient_name": pełne imię i nazwisko (jeśli wieloliniowe — połącz spacją). Jeśli przed nazwiskiem widnieje nazwa firmy, możesz dopisać firmę w nawiasie po nazwisku.
+- "phone": "" (numery telefonów NIE występują w tym manifeście)
+- "package_numbers": lista numerów paczek (np. ["PX7565795355"]). Jeden wiersz = zwykle jeden numer.
+- "is_cod": true jeśli w linii trackingowej jest słowo "pobr"; w przeciwnym razie false
+- "cod_amount": 0 (kwoty NIE są pokazane w tym manifeście)
+- "lat": szerokość geograficzna adresu jako float (WGS84). Najlepsze przybliżenie z Twojej wiedzy o polskiej geografii. Np. 53.4285 dla Szczecina.
+- "lng": długość geograficzna adresu jako float. Np. 14.5528 dla Szczecina.
 
-ZWRÓĆ TYLKO POPRAWNY JSON W TYM FORMACIE i NIC POZA NIM:
+KRYTYCZNE ZASADY:
+1. ZACHOWAJ DOKŁADNĄ KOLEJNOŚĆ Z MANIFESTU — platforma źródłowa już zoptymalizowała trasę, NIE sortuj ponownie.
+2. WYDOBĄDŹ WSZYSTKIE STOPY — nagłówek mówi ile ich jest ("Stops: 104"). Nie pomijaj żadnego.
+3. Polskie znaki (ł, ś, ż, ć, ń, ó, ą, ę) bywają popsute w PDF — odtwórz je tam gdzie się da (np. "Wi niewski" → "Wiśniewski", "Dor czenie" → "Doręczenie", "Grayna" → "Grażyna", "ZAK AD" → "ZAKŁAD").
+4. Współrzędne lat/lng podaj zawsze — jeśli nie znasz dokładnego budynku, podaj koordynaty środka ulicy lub dzielnicy. Jeśli adres jest niejasny, podaj koordynaty centrum miasta.
+5. Zwróć WYŁĄCZNIE poprawny JSON. Żadnego komentarza, żadnego markdown.
+
+FORMAT WYJŚCIA:
 {
   "stops": [
     {
-      "address": "ul. Marszałkowska 1, 00-001 Warszawa",
-      "recipient_name": "Jan Kowalski",
-      "phone": "+48 600 000 000",
-      "package_numbers": ["PCK12345"],
-      "cod_amount": 150.00
+      "order": 1,
+      "address": "Andrzeja Antosiewicza 1, Szczecin",
+      "recipient_name": "Kacper Wiśniewski (P.H.U. AWO)",
+      "phone": "",
+      "package_numbers": ["PX7565795355"],
+      "is_cod": false,
+      "cod_amount": 0,
+      "lat": 53.4285,
+      "lng": 14.5528
     }
   ]
 }
@@ -149,11 +178,11 @@ async def upload_manifest(req: ManifestUploadRequest):
             api_key=EMERGENT_LLM_KEY,
             session_id=str(uuid.uuid4()),
             system_message=PARSING_SYSTEM_PROMPT,
-        ).with_model("gemini", "gemini-2.5-flash")
+        ).with_model("gemini", "gemini-2.5-flash").with_params(max_tokens=32000)
 
         pdf_file = FileContentWithMimeType(file_path=tmp_path, mime_type="application/pdf")
         response = await chat.send_message(UserMessage(
-            text="Sparsuj ten manifest kuriera i zwróć JSON z listą stopów uporządkowanych logicznie.",
+            text="Sparsuj ten manifest kuriera i zwróć JSON z listą WSZYSTKICH stopów w dokładnej kolejności z manifestu.",
             file_contents=[pdf_file],
         ))
     except HTTPException:
@@ -186,13 +215,31 @@ async def upload_manifest(req: ManifestUploadRequest):
             cod = float(s.get("cod_amount", 0) or 0)
         except Exception:
             cod = 0.0
+        try:
+            order_val = int(s.get("order", i + 1))
+        except Exception:
+            order_val = i + 1
+        is_cod_flag = bool(s.get("is_cod", False)) or cod > 0
+        lat_val: Optional[float] = None
+        lng_val: Optional[float] = None
+        try:
+            if s.get("lat") is not None:
+                lat_val = float(s.get("lat"))
+            if s.get("lng") is not None:
+                lng_val = float(s.get("lng"))
+        except Exception:
+            lat_val = None
+            lng_val = None
         stops.append(Stop(
-            order=i + 1,
+            order=order_val,
             address=str(s.get("address", "")).strip(),
             recipient_name=str(s.get("recipient_name", "")).strip(),
             phone=str(s.get("phone", "")).strip(),
             package_numbers=[str(x) for x in (s.get("package_numbers") or [])],
             cod_amount=cod,
+            is_cod=is_cod_flag,
+            lat=lat_val,
+            lng=lng_val,
         ))
 
     name = (req.name or "").strip() or f"Trasa {datetime.now(timezone.utc).strftime('%d.%m.%Y %H:%M')}"

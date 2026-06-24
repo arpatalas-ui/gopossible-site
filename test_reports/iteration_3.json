@@ -1,0 +1,51 @@
+{
+  "summary": "Iteration 3 verification complete (backend + frontend on https://courier-nav-4.preview.emergentagent.com, viewport 390x844). Backend: real 4BIS PDF (104 deliveries) uploaded via POST /api/manifest/upload — Gemini-2.5-flash parsed 104/104 stops, all required fields present (order, address, recipient_name, package_numbers, is_cod, cod_amount, lat, lng), order preserved (1=Kacper Wiśniewski/P.H.U. AWO, 2=Paweł Cackowski, 3=Grażyna Wołdańska), Polish diacritics reconstructed, COD detection works (7 pobr stops; Cackowski PX7570288759 correctly is_cod=true), coordinates present for 104/104 stops all within Szczecin bounding box (53.2-53.7, 14.3-14.8). 10/10 pytest tests pass. Frontend: navigated directly to /route/4fca5350-... — Leaflet/OpenStreetMap iframe renders ABOVE the stop list (testID='route-map'), 104 markers embedded in iframe data, leaflet.css and tile.openstreetmap.org references present. Stop list renders all 104 stops with correct order, addresses, POBRANIE badges on CoD stops, OCZEKUJE status badges. Header shows '0/104 dostarczonych • 7 pobranie'. Tap on stop row navigates to /route/{id}/stop/{stopId}. NOTE on ingress: Gemini parse for 104 stops takes 60-120s; the public preview ingress times out at 60s with 502 Bad Gateway. Backend itself completes successfully — tests therefore call the upload endpoint via INTERNAL_URL (localhost:8001) while ALL other endpoints (list/get/stops) hit the public BASE_URL.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/manifest/upload", "issue": "Gemini-2.5-flash occasionally returns malformed/truncated JSON for 104-stop manifests even with max_tokens=32000 (one 500 'Niepoprawna odpowiedź AI: Expecting , delimiter' observed during testing). 4 of 5 attempts during this iteration succeeded. Recommend adding one retry + tighter JSON post-processing, or use Gemini-2.5-pro for the heavy manifests."},
+      {"endpoint": "POST /api/manifest/upload", "issue": "Public ingress 502s after 60s; parse routinely takes 60-120s. Either raise ingress proxy timeout for /api/manifest/upload, stream/queue the parse asynchronously and poll for result, or chunk the PDF. Currently the web client receives 502 even though the backend persists the route a few seconds later — leads to confusing UX (user sees error then route appears on refresh)."},
+      {"endpoint": "GET /api/routes/{id}", "issue": "Returned stops lack lat/lng/is_cod keys for routes uploaded BEFORE this iteration's schema change (e.g., 44973d96, b7f5dd83, 2c97dc9d, 32ee7b77, 85b3173d). Frontend then shows the 'Mapa będzie dostępna…' placeholder for those routes. Either run a one-shot backfill or coerce defaults (is_cod=false, lat/lng=null) in the response builder so the schema is consistent."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/route/{id}", "issues": [
+        "Gemini returns identical (city-center) lat/lng for the vast majority of stops, so all 104 markers cluster on top of each other on the Leaflet map — a single pin labelled '104' is what the user sees after fitBounds(). The map technically works but adds little value until coords are real. Consider (a) calling a real geocoder (Nominatim/OSM) on the backend for each address, or (b) jittering identical coords client-side so individual pins are visible.",
+        "Pre-existing non-blocking RN-web warnings: shadow*' style props deprecated; props.pointerEvents deprecated (reported in iter_1)."
+      ]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_4bis_manifest.py",
+    "/app/test_reports/pytest/iteration_3.xml",
+    "/tmp/4bis_manifest.pdf",
+    "/tmp/it3_route_new.png",
+    "/tmp/it3_route_scrolled.png",
+    "/tmp/it3_stop_screen.png"
+  ],
+  "action_items": [
+    "Add retry + safer JSON extraction to /api/manifest/upload (Gemini occasional malformed JSON).",
+    "Either raise the ingress proxy timeout for /api/manifest/upload or convert it to async job + polling — current 502 on long parses is the main UX risk.",
+    "Backfill or coerce defaults (is_cod=false, lat=null, lng=null) for stops in routes uploaded before iteration 3 so the map placeholder isn't shown forever for those older routes.",
+    "Improve geocoding (real geocoder or coord jitter) so map markers don't all stack on the same point."
+  ],
+  "critical_code_review_comments": [
+    "server.py: GET /api/routes and GET /api/routes/{id} return the raw Mongo doc (only stripping photo/signature). Stops persisted before the schema change therefore lack is_cod/lat/lng keys, which leaks to the client. Use Stop(**s).model_dump() (or a projection with defaults) so the API contract is stable across upgrades.",
+    "server.py: _extract_json is brittle — the second 500 of this iteration was a Gemini response that contained 32k tokens and was truncated mid-array. Suggest detecting unterminated JSON and retrying with a shorter prompt or higher max_tokens / different model.",
+    "RouteMap.tsx: data-uri iframe approach works on web preview; for very large stop arrays the encoded URL could approach browser limits — for this manifest (~21KB encoded) it's fine, but >100KB could fail on some browsers. Consider srcDoc with a measured fallback.",
+    "RouteMap.tsx: postMessage from the iframe uses window.parent.postMessage but the parent never listens — taps on map markers therefore do not navigate on the web platform (only on native via ReactNativeWebView). Add a window.addEventListener('message') wrapper on the web branch if marker-tap navigation is desired."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_4bis_manifest.py (new)"
+  ],
+  "success_rate": {"backend": "10/10 (100%)", "frontend": "100% on the freshly-uploaded route 4fca5350; older routes display the 'no coords' placeholder as expected because they were stored before the schema change"},
+  "seed_data_creation": "Created one new route via INTERNAL_URL upload: id=4fca5350-ddf4-40cb-8028-aae36f8d257d, name='TEST_4BIS_Q1', 104 stops, has_lat/has_iscod=True. Kept (not deleted) so main agent can re-verify. Older 4BIS routes left intact.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Real 4BIS PDF lives at /tmp/4bis_manifest.pdf (19.5 KB). The Gemini parse is slow (60-120s) and the public ingress 502s at 60s — use INTERNAL_URL=http://localhost:8001 for /api/manifest/upload and the public BASE_URL for everything else (see /app/backend/tests/test_4bis_manifest.py for the working pattern). To test the map flow without a fresh upload, hit /route/4fca5350-ddf4-40cb-8028-aae36f8d257d — that route has all 104 stops with lat/lng/is_cod populated. Existing routes b7f5dd83/2c97dc9d/44973d96 will show the placeholder because they predate the schema change.",
+  "rca_of_issue": "No regression introduced this iteration. The notable behaviour difference (no map on older routes) is by design — the lat/lng/is_cod fields were added in iteration 3 and there is no backfill, so stops persisted earlier still lack those keys when re-read from MongoDB. Backend logic correctly populates them on new uploads (verified via /api/routes/4fca5350-... — 104/104 stops with floats for lat & lng and booleans for is_cod). Recommended remediation: coerce defaults when reading (one-line change in get_route / list_routes) so the API contract is stable."
+}

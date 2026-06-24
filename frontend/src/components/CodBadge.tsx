@@ -2,17 +2,33 @@ import React from "react";
 import { Text, View, StyleSheet } from "react-native";
 import { colors } from "@/src/theme";
 
-export function CodBadge({ amount, large = false }: { amount: number; large?: boolean }) {
-  if (!amount || amount <= 0) return null;
+export function CodBadge({
+  amount,
+  isCod = false,
+  large = false,
+}: {
+  amount: number;
+  isCod?: boolean;
+  large?: boolean;
+}) {
+  const show = amount > 0 || isCod;
+  if (!show) return null;
+  const hasAmount = amount > 0;
   return (
     <View
       style={[styles.badge, large && styles.large]}
       testID="cod-badge"
     >
       <Text style={[styles.label, large && styles.labelLarge]}>POBRANIE</Text>
-      <Text style={[styles.amount, large && styles.amountLarge]}>
-        {amount.toFixed(2)} PLN
-      </Text>
+      {hasAmount ? (
+        <Text style={[styles.amount, large && styles.amountLarge]}>
+          {amount.toFixed(2)} PLN
+        </Text>
+      ) : large ? (
+        <Text style={[styles.amount, large && styles.amountLarge, { fontSize: 18 }]}>
+          do pobrania
+        </Text>
+      ) : null}
     </View>
   );
 }

@@ -16,6 +16,7 @@ import { api, Route, Stop } from "@/src/api";
 import { colors } from "@/src/theme";
 import { CodBadge } from "@/src/components/CodBadge";
 import { StatusBadge } from "@/src/components/StatusBadge";
+import { RouteMap } from "@/src/components/RouteMap";
 
 export default function RouteScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -46,6 +47,7 @@ export default function RouteScreen() {
   );
 
   const totalCod = route?.stops.reduce((s, st) => s + (st.cod_amount || 0), 0) || 0;
+  const codCount = route?.stops.filter((s) => s.is_cod || s.cod_amount > 0).length || 0;
   const delivered = route?.stops.filter((s) => s.status === "delivered").length || 0;
   const total = route?.stops.length || 0;
 
@@ -59,7 +61,7 @@ export default function RouteScreen() {
           <Text style={styles.title} numberOfLines={1}>{route?.name || "Trasa"}</Text>
           <Text style={styles.subtitle}>
             {delivered}/{total} dostarczonych
-            {totalCod > 0 ? `  •  ${totalCod.toFixed(2)} PLN pobrania` : ""}
+            {totalCod > 0 ? `  •  ${totalCod.toFixed(2)} PLN pobrania` : codCount > 0 ? `  •  ${codCount} pobranie` : ""}
           </Text>
         </View>
       </View>
@@ -77,6 +79,16 @@ export default function RouteScreen() {
           data={route?.stops || []}
           keyExtractor={(s) => s.id}
           contentContainerStyle={styles.listContent}
+          ListHeaderComponent={
+            route && route.stops.length > 0 ? (
+              <View style={styles.mapWrap}>
+                <RouteMap
+                  stops={route.stops}
+                  onStopPress={(sid) => router.push(`/route/${id}/stop/${sid}`)}
+                />
+              </View>
+            ) : null
+          }
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -122,9 +134,9 @@ function StopRow({ stop, onPress }: { stop: Stop; onPress: () => void }) {
         </Text>
         <View style={styles.badgeRow}>
           <StatusBadge status={stop.status} />
-          {stop.cod_amount > 0 ? (
+          {(stop.cod_amount > 0 || stop.is_cod) ? (
             <View style={{ marginLeft: 8 }}>
-              <CodBadge amount={stop.cod_amount} />
+              <CodBadge amount={stop.cod_amount} isCod={stop.is_cod} />
             </View>
           ) : null}
         </View>
@@ -150,6 +162,7 @@ const styles = StyleSheet.create({
   errorText: { color: colors.error, fontWeight: "700" },
   emptyText: { color: colors.textSecondary },
   listContent: { padding: 16, paddingBottom: 32 },
+  mapWrap: { marginBottom: 16 },
   stopCard: {
     flexDirection: "row",
     alignItems: "center",

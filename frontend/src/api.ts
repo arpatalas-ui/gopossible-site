@@ -35,6 +35,9 @@ export type Stop = {
   phone: string;
   package_numbers: string[];
   cod_amount: number;
+  is_cod?: boolean;
+  lat?: number | null;
+  lng?: number | null;
   status: "pending" | "delivered" | "absent";
   photo_base64?: string | null;
   signature_base64?: string | null;

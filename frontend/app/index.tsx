@@ -103,7 +103,8 @@ export default function HomeScreen() {
     const total = r.stops.length;
     const delivered = r.stops.filter((s) => s.status === "delivered").length;
     const cod = r.stops.reduce((sum, s) => sum + (s.cod_amount || 0), 0);
-    return { total, delivered, cod };
+    const codCount = r.stops.filter((s) => s.is_cod || s.cod_amount > 0).length;
+    return { total, delivered, cod, codCount };
   };
 
   return (
@@ -178,6 +179,7 @@ export default function HomeScreen() {
                   <Text style={styles.routeName} numberOfLines={1}>{item.name}</Text>
                   <Text style={styles.routeMeta}>
                     {s.delivered} / {s.total} dostarczonych
+                    {s.codCount > 0 ? `  •  ${s.codCount} pobranie` : ""}
                   </Text>
                   {s.cod > 0 ? (
                     <View style={{ marginTop: 8 }}>
