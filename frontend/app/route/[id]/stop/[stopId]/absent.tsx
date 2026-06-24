@@ -100,7 +100,7 @@ export default function AbsentScreen() {
 
       <View style={styles.content}>
         <View style={styles.iconCircle}>
-          <Ionicons name="person-remove" size={56} color={colors.error} />
+          <Ionicons name="person-remove" size={56} color={colors.absent} />
         </View>
 
         <Text style={styles.summaryTitle}>Brak odbiorcy</Text>
@@ -166,7 +166,7 @@ const styles = StyleSheet.create({
     width: 96,
     height: 96,
     borderRadius: 48,
-    backgroundColor: "#FFEBEE",
+    backgroundColor: "#F0F0F0",
     alignItems: "center",
     justifyContent: "center",
     marginVertical: 16,

@@ -44,7 +44,7 @@ function buildHtml({ user, target, next, polyline }: Props): string {
 <style>
   html,body,#map{height:100%;margin:0;padding:0;background:#F3F4F6;}
   .pin-wrap{display:flex;align-items:center;justify-content:center;border-radius:50%;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.4);color:#fff;font-weight:900;font-family:-apple-system,Roboto,sans-serif;}
-  .pin-target{width:44px;height:44px;background:#FF5A00;font-size:16px;}
+  .pin-target{width:44px;height:44px;background:#E63329;font-size:16px;}
   .pin-next{width:30px;height:30px;background:#0A0A0A;font-size:12px;opacity:.85;}
   .pin-user{width:22px;height:22px;background:#1E88E5;border:3px solid #fff;box-shadow:0 0 0 4px rgba(30,136,229,.25);}
   .leaflet-control-attribution{display:none;}
@@ -93,10 +93,10 @@ function buildHtml({ user, target, next, polyline }: Props): string {
 
   // Polyline / route
   if (d.polyline && d.polyline.length > 1) {
-    L.polyline(d.polyline, { color:'#FF5A00', weight:5, opacity:.85, lineCap:'round' }).addTo(map);
+    L.polyline(d.polyline, { color:'#E63329', weight:5, opacity:.85, lineCap:'round' }).addTo(map);
   } else if (d.user && d.target && typeof d.target.lat === 'number') {
     // straight fallback
-    L.polyline([[d.user.lat,d.user.lng],[d.target.lat,d.target.lng]], { color:'#FF5A00', weight:4, opacity:.6, dashArray:'8,8' }).addTo(map);
+    L.polyline([[d.user.lat,d.user.lng],[d.target.lat,d.target.lng]], { color:'#E63329', weight:4, opacity:.6, dashArray:'8,8' }).addTo(map);
   }
 
   if (bounds.length === 1) {

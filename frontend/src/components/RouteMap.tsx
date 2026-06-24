@@ -51,9 +51,9 @@ function buildHtml(stops: Stop[]): string {
 
   var markers = [];
   stops.forEach(function(s){
-    var color = s.status === 'delivered' ? '#00C853'
-              : s.status === 'absent' ? '#D50000'
-              : s.cod ? '#FFB300' : '#FF5A00';
+    var color = s.status === 'delivered' ? '#00B14F'
+              : s.status === 'absent' ? '#1F1F1F'
+              : s.cod ? '#FFB300' : '#E63329';
     var icon = L.divIcon({
       className: '',
       html: '<div class="pin-wrap" style="background:' + color + '">' + s.order + '</div>',

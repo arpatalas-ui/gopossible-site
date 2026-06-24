@@ -2,17 +2,18 @@
 // Based on /app/design_guidelines.json (Performance Pro – Daylight Visibility).
 
 export const colors = {
-  bg: "#F3F4F6",
+  bg: "#F5F5F5",
   card: "#FFFFFF",
   text: "#0A0A0A",
   textSecondary: "#4B5563",
   textInverse: "#FFFFFF",
-  primary: "#FF5A00",
-  primaryHover: "#E65100",
-  success: "#00C853",
+  primary: "#E63329",
+  primaryHover: "#B81E15",
+  success: "#00B14F",
   error: "#D50000",
   warning: "#FFB300",
   cod: "#FFB300",
+  absent: "#1F1F1F",
   border: "#E5E7EB",
   borderDark: "#D1D5DB",
 };

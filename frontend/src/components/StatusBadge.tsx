@@ -13,7 +13,7 @@ const LABELS: Record<Status, string> = {
 const BG: Record<Status, string> = {
   pending: "#E5E7EB",
   delivered: colors.success,
-  absent: colors.error,
+  absent: colors.absent,
 };
 
 const FG: Record<Status, string> = {

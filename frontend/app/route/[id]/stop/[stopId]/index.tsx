@@ -245,6 +245,6 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   deliveredBtn: { backgroundColor: colors.success },
-  absentBtn: { backgroundColor: colors.error },
+  absentBtn: { backgroundColor: colors.absent },
   actionText: { color: "#fff", fontSize: 17, fontWeight: "900" },
 });

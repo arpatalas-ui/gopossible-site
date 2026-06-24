@@ -1,0 +1,28 @@
+{
+  "summary": "Iteration 5 frontend-only test of /route/{id}/stop/{stopId}/navigate with new 'Rozpocznij nawigację' start button. All requested behaviors verified on mobile viewport 390x844 against seeded route 4fca5350-ddf4-40cb-8028-aae36f8d257d, stop 1 (b705e21d-...). Initial state: start-nav-btn visible, stop-nav-btn absent, recenter-btn absent, subtitle 'Nawigacja zatrzymana — naciśnij start poniżej' present, map renders with red target pin (#1) and next-stop pins, no user marker, no polyline. Tapping start-nav-btn in headless browser (geolocation denied + canAskAgain=false) gracefully keeps start-nav-btn visible (per documented code path: navigating stays false when both ok and user are falsy) — no crash, no page errors, no red screen, no console errors. Dostarczono (mark-delivered-btn) and Nieobecny (mark-absent-btn) are visible throughout. NASTĘPNE PUNKTY section renders 3 next-row entries; tapping next-row-90bb4684-... correctly performs router.replace to /route/{id}/stop/90bb4684.../navigate. Two non-blocking React Native deprecation warnings observed: shadow* style props deprecated (use boxShadow) and props.pointerEvents deprecated (use style.pointerEvents).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "navigate.tsx styles (bottom, topBarRow, startBtn etc.)", "issue": "Deprecation warning at runtime: 'shadow*' style props are deprecated. Use 'boxShadow'. Reference: /app/frontend/app/route/[id]/stop/[stopId]/navigate.tsx around lines 386-413 (shadowColor/shadowOpacity/shadowRadius/shadowOffset used in styles.topBarRow and styles.bottom)."},
+      {"component": "navigate.tsx topBar SafeAreaView", "issue": "Deprecation warning at runtime: props.pointerEvents is deprecated. Use style.pointerEvents instead. Reference: /app/frontend/app/route/[id]/stop/[stopId]/navigate.tsx:195 (pointerEvents=\"box-none\" prop on SafeAreaView)."}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Optional: Migrate styles.topBarRow and styles.bottom shadow* props to boxShadow string (RN 0.76+ API) to silence runtime warning.",
+    "Optional: Move pointerEvents=\"box-none\" on the top bar SafeAreaView to style={{ pointerEvents: 'box-none' }} per latest RN API."
+  ],
+  "critical_code_review_comments": [
+    "startNavigation() only sets navigating=true when permission is granted OR a previous user position exists. In environments where permission is denied without canAskAgain (e.g. headless web preview, browsers with site permission blocked) the user gets no visual feedback after pressing the button — the start button simply stays. Consider also setting navigating=true on a denied result so the yellow permission banner with 'Ustawienia' becomes visible and the user understands why nothing happened. Reference: /app/frontend/app/route/[id]/stop/[stopId]/navigate.tsx:88-91."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "100%"},
+  "seed_data_creation": "None. Used existing seeded route 4fca5350-ddf4-40cb-8028-aae36f8d257d and its stops.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Headless Chromium blocks geolocation entirely (status=denied, canAskAgain=false). To exercise the 'navigating=true + polyline + watchPositionAsync' code path during browser automation, grant geolocation through Playwright context permissions and stub a position via context.set_geolocation before navigating to the page. Current iteration only validated the idle/start-press paths; the active-navigation path (user marker, OSRM polyline, recenter button, 'Liczę trasę…' subtitle, stop-nav-btn flow) was not directly exercised but the code wiring was reviewed and is consistent with the spec.",
+  "rca_of_issue": "n/a — feature works as specified by the iteration 5 changeset."
+}

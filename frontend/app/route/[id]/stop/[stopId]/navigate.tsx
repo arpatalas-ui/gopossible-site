@@ -45,6 +45,7 @@ export default function NavigateScreen() {
   const [routing, setRouting] = useState(false);
   const [routeInfo, setRouteInfo] = useState<{ distance: number; duration: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [navigating, setNavigating] = useState(false);
 
   // Load route data
   useEffect(() => {
@@ -61,7 +62,7 @@ export default function NavigateScreen() {
       if (current.status !== "granted") {
         if (!current.canAskAgain) {
           setPermission(current);
-          return;
+          return false;
         }
         resp = await Location.requestForegroundPermissionsAsync();
       }
@@ -72,18 +73,45 @@ export default function NavigateScreen() {
             accuracy: Location.Accuracy.Balanced,
           });
           setUser({ lat: loc.coords.latitude, lng: loc.coords.longitude });
+          return true;
         } catch {
-          // best-effort — map still works without user location
+          return false;
         }
       }
+      return false;
     } finally {
       setPermRequesting(false);
     }
   }, []);
 
+  // Start / stop navigation (with continuous tracking)
+  const startNavigation = useCallback(async () => {
+    const ok = await requestLocation();
+    if (ok || user) setNavigating(true);
+  }, [requestLocation, user]);
+
+  const stopNavigation = useCallback(() => {
+    setNavigating(false);
+  }, []);
+
+  // Continuous position tracking while navigating
   useEffect(() => {
-    requestLocation();
-  }, [requestLocation]);
+    if (!navigating) return;
+    let sub: Location.LocationSubscription | null = null;
+    (async () => {
+      try {
+        sub = await Location.watchPositionAsync(
+          { accuracy: Location.Accuracy.Balanced, distanceInterval: 25, timeInterval: 5000 },
+          (loc) => setUser({ lat: loc.coords.latitude, lng: loc.coords.longitude }),
+        );
+      } catch {
+        // fallthrough
+      }
+    })();
+    return () => {
+      if (sub) sub.remove();
+    };
+  }, [navigating]);
 
   const currentStop: Stop | null = useMemo(() => {
     return route?.stops.find((s) => s.id === stopId) || null;
@@ -96,8 +124,9 @@ export default function NavigateScreen() {
     return route.stops.slice(idx + 1, idx + 6);
   }, [route, currentStop]);
 
-  // Fetch OSRM road route from user → target
+  // Fetch OSRM road route from user → target — only while navigating
   useEffect(() => {
+    if (!navigating) return;
     if (!user || !currentStop || typeof currentStop.lat !== "number" || typeof currentStop.lng !== "number") return;
     let cancelled = false;
     setRouting(true);
@@ -121,7 +150,7 @@ export default function NavigateScreen() {
     return () => {
       cancelled = true;
     };
-  }, [user, currentStop]);
+  }, [navigating, user, currentStop]);
 
   // ----- Renders -----
   if (error) {
@@ -155,10 +184,10 @@ export default function NavigateScreen() {
           <PlaceholderMap message="Brak współrzędnych dla tego stopa. Wgraj manifest ponownie aby uzupełnić mapę." />
         ) : (
           <NavigateMap
-            user={user}
+            user={navigating ? user : null}
             target={currentStop}
             next={nextStops}
-            polyline={polyline || undefined}
+            polyline={navigating ? (polyline || undefined) : undefined}
           />
         )}
 
@@ -172,10 +201,12 @@ export default function NavigateScreen() {
               <Text style={styles.topTitle} numberOfLines={1}>
                 Stop #{currentStop.order} z {route.stops.length}
               </Text>
-              {routing ? (
+              {!navigating ? (
+                <Text style={styles.topSubtitle}>Nawigacja zatrzymana — naciśnij start poniżej</Text>
+              ) : routing ? (
                 <Text style={styles.topSubtitle}>Liczę trasę…</Text>
               ) : routeInfo ? (
-                <Text style={styles.topSubtitle}>
+                <Text style={[styles.topSubtitle, styles.topSubtitleActive]}>
                   {formatDistance(routeInfo.distance)}  •  {formatDuration(routeInfo.duration)}
                 </Text>
               ) : permDenied ? (
@@ -186,7 +217,7 @@ export default function NavigateScreen() {
                 <Text style={styles.topSubtitle}>Linia prosta</Text>
               )}
             </View>
-            {user && (
+            {navigating && user && (
               <TouchableOpacity
                 onPress={requestLocation}
                 style={styles.iconBtn}
@@ -200,8 +231,8 @@ export default function NavigateScreen() {
         </SafeAreaView>
       </View>
 
-      {/* Permission denied banner */}
-      {permDenied && (
+      {/* Permission denied banner — only after user attempted to start */}
+      {navigating && permDenied && (
         <View style={styles.permBanner}>
           <Ionicons name="location-outline" size={20} color={colors.warning} />
           <Text style={styles.permText}>
@@ -266,6 +297,36 @@ export default function NavigateScreen() {
             </View>
           )}
         </ScrollView>
+
+        {/* Start / Stop navigation button */}
+        {currentStop.status === "pending" && !noTargetCoords && (
+          !navigating ? (
+            <TouchableOpacity
+              style={styles.startBtn}
+              onPress={startNavigation}
+              disabled={permRequesting}
+              testID="start-nav-btn"
+            >
+              {permRequesting ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name="navigate" size={22} color="#fff" />
+                  <Text style={styles.startBtnText}>  Rozpocznij nawigację</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={styles.stopBtn}
+              onPress={stopNavigation}
+              testID="stop-nav-btn"
+            >
+              <Ionicons name="stop-circle" size={20} color={colors.text} />
+              <Text style={styles.stopBtnText}>  Zatrzymaj nawigację</Text>
+            </TouchableOpacity>
+          )
+        )}
 
         {/* Action buttons */}
         {currentStop.status === "pending" ? (
@@ -335,6 +396,7 @@ const styles = StyleSheet.create({
   topInfo: { flex: 1, paddingHorizontal: 8 },
   topTitle: { fontSize: 15, fontWeight: "900", color: colors.text },
   topSubtitle: { fontSize: 12, color: colors.textSecondary, marginTop: 1 },
+  topSubtitleActive: { color: colors.primary, fontWeight: "800" },
   permBanner: {
     flexDirection: "row", alignItems: "center", gap: 8,
     backgroundColor: "#FFF8E1", paddingHorizontal: 14, paddingVertical: 10,
@@ -379,12 +441,23 @@ const styles = StyleSheet.create({
   actionsRow: {
     flexDirection: "row", gap: 10, marginTop: 8,
   },
+  startBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center",
+    backgroundColor: colors.primary, height: 60, borderRadius: 999, marginTop: 8,
+  },
+  startBtnText: { color: "#fff", fontWeight: "900", fontSize: 17 },
+  stopBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center",
+    backgroundColor: colors.card, height: 50, borderRadius: 999, marginTop: 8,
+    borderWidth: 2, borderColor: colors.text,
+  },
+  stopBtnText: { color: colors.text, fontWeight: "800", fontSize: 15 },
   actionBtn: {
     flex: 1, height: 56, borderRadius: 999,
     alignItems: "center", justifyContent: "center",
     flexDirection: "row", gap: 6,
   },
   deliveredBtn: { backgroundColor: colors.success },
-  absentBtn: { backgroundColor: colors.error },
+  absentBtn: { backgroundColor: colors.absent },
   actionText: { color: "#fff", fontWeight: "900", fontSize: 15 },
 });
