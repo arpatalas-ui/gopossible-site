@@ -12,7 +12,8 @@
       "supportsTablet": true,
       "infoPlist": {
         "NSCameraUsageDescription": "Zdjęcie miejsca pozostawienia paczki",
-        "NSPhotoLibraryUsageDescription": "Wybór zdjęć paczki z galerii"
+        "NSPhotoLibraryUsageDescription": "Wybór zdjęć paczki z galerii",
+        "NSLocationWhenInUseUsageDescription": "Pokazujemy Twoją pozycję na mapie trasy"
       }
     },
     "android": {
@@ -21,7 +22,7 @@
         "backgroundColor": "#000"
       },
       "edgeToEdgeEnabled": true,
-      "permissions": ["CAMERA"]
+      "permissions": ["CAMERA", "ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"]
     },
     "web": {
       "bundler": "metro",
@@ -43,6 +44,12 @@
         "expo-camera",
         {
           "cameraPermission": "Zdjęcie miejsca pozostawienia paczki"
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Pokazujemy Twoją pozycję na mapie trasy"
         }
       ]
     ],

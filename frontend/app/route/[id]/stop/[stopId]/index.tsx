@@ -6,8 +6,6 @@ import {
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
-  Linking,
-  Platform,
 } from "react-native";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -47,15 +45,7 @@ export default function StopScreen() {
 
   const openMaps = () => {
     if (!stop) return;
-    const q = encodeURIComponent(stop.address);
-    const url = Platform.select({
-      ios: `maps://?q=${q}`,
-      android: `geo:0,0?q=${q}`,
-      default: `https://www.google.com/maps/search/?api=1&query=${q}`,
-    })!;
-    Linking.openURL(url).catch(() =>
-      Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${q}`),
-    );
+    router.push(`/route/${id}/stop/${stopId}/navigate`);
   };
 
   const onReset = async () => {

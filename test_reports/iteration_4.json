@@ -1,0 +1,32 @@
+{
+  "summary": "Iteration 4 frontend testing — in-app internal navigation screen. All requested flows verified successfully on mobile viewport (390x844) against https://courier-nav-4.preview.emergentagent.com using the existing seeded route 4fca5350-... (104 stops, real Szczecin addresses). 'Nawiguj' button correctly pushes the in-app route /route/{id}/stop/{stopId}/navigate (NO external Google Maps tab opened — page.context still contained only 1 page). Navigate screen renders: navigate-map iframe with Leaflet+OSM tiles loaded (6 tiles confirmed), 1 big orange target pin (.pin-target) and 5 small black numbered next pins (.pin-next) confirmed via DOM probing of the data: iframe. Top bar shows 'Stop #1 z 104' and graceful geolocation-denied subtitle 'Brak dostępu do lokalizacji'. Yellow permission banner with 'Włącz' action button present (geolocation denied by headless browser as expected — app does NOT crash). Bottom panel shows current address ('Andrzeja Antosiewicza 1, Szczecin') + recipient ('Kacper Wiśniewski (P.H.U. AWO)'). 'NASTĘPNE PUNKTY' section lists 3 next stops (orders 2, 3, 4) with correct Szczecin addresses; tapping next-row-<id> performs router.replace and the URL becomes /route/{id}/stop/{nextStopId}/navigate as required. 'Dostarczono' (mark-delivered-btn) and 'Nieobecny' (mark-absent-btn) buttons present; tapping 'Nieobecny' routes to /absent. Back navigation from navigate-screen returns to /stop/{stopId} detail screen, which still loads correctly. Backend smoke: GET /api/routes returns 200 with 6 routes; first stop of target route has lat=53.4285, lng=14.5528 and is_cod boolean field present. Deprecated-style RN warnings detected (not blockers): 'shadow*' style props and 'props.pointerEvents' deprecation warnings logged.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "navigate.tsx styles + general", "issue": "RN web warns: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' — multiple StyleSheet entries use shadowColor/shadowOpacity/shadowRadius/shadowOffset (e.g. navigate.tsx:325-329 topBarRow, :350-351 bottom). Migrate to boxShadow for web compatibility while keeping native shadow props if needed via Platform.select."},
+      {"component": "navigate.tsx topBar SafeAreaView", "issue": "RN web warns: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Reference: /app/frontend/app/route/[id]/stop/[stopId]/navigate.tsx:166 — pointerEvents=\"box-none\" should be moved into the style prop."}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Optional polish (non-blocking): migrate StyleSheet shadow* props to boxShadow on web (Platform.select) to silence deprecation warnings.",
+    "Optional polish (non-blocking): move pointerEvents=\"box-none\" from prop into style on the topBar SafeAreaView in navigate.tsx:166."
+  ],
+  "critical_code_review_comments": [
+    "NavigateMap useMemo dep list disables exhaustive-deps lint; current spread is fine but if Stop object identity changes across re-renders unnecessarily the iframe will re-render frequently — acceptable for now.",
+    "OSRM call is unauthenticated public demo endpoint — fine for dev, but consider rate-limit/timeout handling for production."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "Reused existing seeded route 4fca5350-ddf4-40cb-8028-aae36f8d257d (TEST_4BIS_Q1, 104 Szczecin stops with lat/lng); no new seed required.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "In-app internal navigation screen at /route/[id]/stop/[stopId]/navigate works end-to-end on web preview. Use route id 4fca5350-ddf4-40cb-8028-aae36f8d257d and stop id b705e21d-5701-4ed7-a3b6-7346d962aa16 for quick retests. Map iframe is loaded as a data: URI — to inspect pins/tiles use page.frames and look for the data:text/html frame, then query '.pin-target', '.pin-next', '.leaflet-tile'. Headless geolocation is denied — yellow 'Brak dostępu do lokalizacji' banner is the expected state; polyline & ETA only render once user grants location (cannot validate OSRM polyline rendering in headless browser, but code path is exercised through useEffect on user/currentStop change).",
+  "rca_of_issue": "N/A — no failures. All 8 requested test steps passed."
+}
