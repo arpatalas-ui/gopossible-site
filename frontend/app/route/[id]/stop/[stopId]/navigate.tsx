@@ -86,9 +86,11 @@ export default function NavigateScreen() {
 
   // Start / stop navigation (with continuous tracking)
   const startNavigation = useCallback(async () => {
-    const ok = await requestLocation();
-    if (ok || user) setNavigating(true);
-  }, [requestLocation, user]);
+    // Enter navigating state immediately so the user gets visual feedback
+    // (permission banner, "Ustawienia" link) even when permission is denied.
+    setNavigating(true);
+    await requestLocation();
+  }, [requestLocation]);
 
   const stopNavigation = useCallback(() => {
     setNavigating(false);
