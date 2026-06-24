@@ -20,6 +20,18 @@ import { CodBadge } from "@/src/components/CodBadge";
 
 type LatLng = { lat: number; lng: number };
 
+type Maneuver = {
+  type: string;
+  modifier?: string;
+  location: [number, number]; // [lng, lat]
+};
+
+type RouteStep = {
+  maneuver: Maneuver;
+  name: string;
+  distance: number;
+};
+
 function formatDistance(m: number): string {
   if (m < 1000) return `${Math.round(m)} m`;
   return `${(m / 1000).toFixed(1)} km`;
@@ -34,6 +46,36 @@ function formatDuration(s: number): string {
   return `${h} h ${r} min`;
 }
 
+function haversine(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// Map an OSRM maneuver to an icon name + Polish label.
+function maneuverHint(m?: Maneuver): { icon: keyof typeof Ionicons.glyphMap; label: string } {
+  if (!m) return { icon: "arrow-up", label: "Prosto" };
+  const t = m.type;
+  const mod = m.modifier || "";
+  if (t === "arrive") return { icon: "flag", label: "Cel" };
+  if (t === "depart") return { icon: "arrow-up", label: "Ruszaj" };
+  if (mod.includes("uturn") || t === "uturn") return { icon: "arrow-undo", label: "Zawracaj" };
+  if (mod.includes("sharp left")) return { icon: "return-up-back", label: "Ostro w lewo" };
+  if (mod.includes("sharp right")) return { icon: "return-up-forward", label: "Ostro w prawo" };
+  if (mod.includes("slight left")) return { icon: "arrow-back", label: "Lekko w lewo" };
+  if (mod.includes("slight right")) return { icon: "arrow-forward", label: "Lekko w prawo" };
+  if (mod === "left") return { icon: "arrow-back", label: "W lewo" };
+  if (mod === "right") return { icon: "arrow-forward", label: "W prawo" };
+  if (mod === "straight" || t === "continue") return { icon: "arrow-up", label: "Prosto" };
+  if (t === "roundabout" || t === "rotary") return { icon: "sync", label: "Rondo" };
+  return { icon: "arrow-up", label: "Prosto" };
+}
+
 export default function NavigateScreen() {
   const { id, stopId } = useLocalSearchParams<{ id: string; stopId: string }>();
   const router = useRouter();
@@ -44,6 +86,8 @@ export default function NavigateScreen() {
   const [polyline, setPolyline] = useState<Array<[number, number]> | null>(null);
   const [routing, setRouting] = useState(false);
   const [routeInfo, setRouteInfo] = useState<{ distance: number; duration: number } | null>(null);
+  const [steps, setSteps] = useState<RouteStep[]>([]);
+  const [stepIndex, setStepIndex] = useState(1); // skip depart
   const [error, setError] = useState<string | null>(null);
   const [navigating, setNavigating] = useState(false);
 
@@ -132,7 +176,7 @@ export default function NavigateScreen() {
     if (!user || !currentStop || typeof currentStop.lat !== "number" || typeof currentStop.lng !== "number") return;
     let cancelled = false;
     setRouting(true);
-    const url = `https://router.project-osrm.org/route/v1/driving/${user.lng},${user.lat};${currentStop.lng},${currentStop.lat}?overview=full&geometries=geojson`;
+    const url = `https://router.project-osrm.org/route/v1/driving/${user.lng},${user.lat};${currentStop.lng},${currentStop.lat}?overview=full&geometries=geojson&steps=true`;
     fetch(url)
       .then((r) => r.json())
       .then((data) => {
@@ -143,6 +187,10 @@ export default function NavigateScreen() {
           const coords: Array<[number, number]> = r.geometry.coordinates.map((c: number[]) => [c[1], c[0]]);
           setPolyline(coords);
           setRouteInfo({ distance: r.distance, duration: r.duration });
+          // Flatten OSRM steps across all legs.
+          const allSteps: RouteStep[] = (r.legs || []).flatMap((l: { steps?: RouteStep[] }) => l.steps || []);
+          setSteps(allSteps);
+          setStepIndex(allSteps.length > 1 ? 1 : 0);
         }
       })
       .catch(() => {
@@ -154,7 +202,30 @@ export default function NavigateScreen() {
     };
   }, [navigating, user, currentStop]);
 
-  // ----- Renders -----
+  // Advance step index as user passes maneuvers.
+  useEffect(() => {
+    if (!navigating || !user || steps.length === 0) return;
+    let idx = stepIndex;
+    while (idx < steps.length - 1) {
+      const [lng, lat] = steps[idx].maneuver.location;
+      const d = haversine(user.lat, user.lng, lat, lng);
+      if (d < 25) idx++;
+      else break;
+    }
+    if (idx !== stepIndex) setStepIndex(idx);
+  }, [user, navigating, steps, stepIndex]);
+
+  // Distance from user to next maneuver point.
+  const compass = useMemo(() => {
+    if (!navigating || !user || steps.length === 0 || stepIndex >= steps.length) return null;
+    const step = steps[stepIndex];
+    const [lng, lat] = step.maneuver.location;
+    const d = haversine(user.lat, user.lng, lat, lng);
+    const hint = maneuverHint(step.maneuver);
+    // step.name = road we will be on AFTER this maneuver (or current road for depart)
+    const road = step.name || (stepIndex + 1 < steps.length ? steps[stepIndex + 1].name : "");
+    return { distance: d, hint, road };
+  }, [navigating, user, steps, stepIndex]);
   if (error) {
     return (
       <SafeAreaView style={styles.container}>
@@ -193,8 +264,29 @@ export default function NavigateScreen() {
           />
         )}
 
+        {/* Compass bar (turn-by-turn) — overlays top of map when navigating */}
+        {compass && (
+          <SafeAreaView style={styles.compassWrap} edges={["top"]} pointerEvents="box-none" testID="compass-bar">
+            <View style={styles.compassRow}>
+              <View style={styles.compassIcon}>
+                <Ionicons name={compass.hint.icon} size={36} color="#fff" />
+              </View>
+              <View style={{ flex: 1, paddingLeft: 12 }}>
+                <Text style={styles.compassDistance}>{formatDistance(compass.distance)}</Text>
+                <Text style={styles.compassRoad} numberOfLines={1}>
+                  {compass.hint.label}{compass.road ? ` • ${compass.road}` : ""}
+                </Text>
+              </View>
+            </View>
+          </SafeAreaView>
+        )}
+
         {/* Top bar overlay */}
-        <SafeAreaView style={styles.topBar} edges={["top"]} pointerEvents="box-none">
+        <SafeAreaView
+          style={[styles.topBar, compass && styles.topBarShifted]}
+          edges={compass ? [] : ["top"]}
+          pointerEvents="box-none"
+        >
           <View style={styles.topBarRow}>
             <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn} testID="back-btn">
               <Ionicons name="chevron-back" size={24} color={colors.text} />
@@ -376,7 +468,23 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   errorText: { color: colors.error, fontWeight: "700" },
   mapContainer: { flex: 1, position: "relative" },
+  compassWrap: { position: "absolute", top: 0, left: 0, right: 0, zIndex: 10 },
+  compassRow: {
+    flexDirection: "row", alignItems: "center",
+    marginHorizontal: 12, marginTop: 12, padding: 12,
+    backgroundColor: colors.primary, borderRadius: 14,
+    shadowColor: "#000", shadowOpacity: 0.25, shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 }, elevation: 6,
+  },
+  compassIcon: {
+    width: 52, height: 52, borderRadius: 26,
+    backgroundColor: "rgba(255,255,255,0.18)",
+    alignItems: "center", justifyContent: "center",
+  },
+  compassDistance: { color: "#fff", fontSize: 22, fontWeight: "900" },
+  compassRoad: { color: "rgba(255,255,255,0.92)", fontSize: 13, fontWeight: "700", marginTop: 2 },
   topBar: { position: "absolute", top: 0, left: 0, right: 0 },
+  topBarShifted: { top: 96 },
   topBarRow: {
     flexDirection: "row",
     alignItems: "center",
