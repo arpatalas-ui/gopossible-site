@@ -1,0 +1,123 @@
+{
+  "theme_and_archetype": {
+    "domain": "Logistics / Courier Navigation Mobile App",
+    "theme": "Light",
+    "archetype": "Archetype 2: Performance Pro (Daylight Visibility Variant)",
+    "description": "High-contrast, utilitarian design optimized for outdoor daylight use by couriers. Focuses on massive touch targets, clear status colors, and glanceable critical data (especially Cash on Delivery amounts). No unnecessary decorations. Emphasizes functionality, speed, and one-handed operation while wearing work gloves."
+  },
+  "typography": {
+    "strategy": "High legibility, robust numbers for financial amounts and addresses.",
+    "fonts": {
+      "headings_and_numbers": "Chivo",
+      "body": "Manrope"
+    },
+    "scale": {
+      "h1": "text-4xl (36px) tracking-tight font-black",
+      "h2": "text-2xl (24px) font-bold",
+      "h3": "text-xl (20px) font-bold",
+      "body_large": "text-lg (18px) font-medium",
+      "body_default": "text-base (16px) font-medium",
+      "caption": "text-sm (14px) font-bold uppercase tracking-widest"
+    }
+  },
+  "colors": {
+    "background": {
+      "default": "#F3F4F6",
+      "card": "#FFFFFF"
+    },
+    "text": {
+      "primary": "#0A0A0A",
+      "secondary": "#4B5563",
+      "inverse": "#FFFFFF"
+    },
+    "primary": {
+      "default": "#FF5A00",
+      "hover": "#E65100"
+    },
+    "status": {
+      "success": "#00C853",
+      "error": "#D50000",
+      "warning": "#FFB300",
+      "cod_badge": "#FFB300"
+    },
+    "borders": {
+      "default": "#E5E7EB",
+      "dark": "#D1D5DB"
+    }
+  },
+  "layout_and_spacing": {
+    "spacing_scale": "Generous spacing. Use p-4 to p-8 padding for containers.",
+    "touch_targets": "CRITICAL: All interactive elements (buttons, list items) MUST be at least 56px to 64px in height for reliable use on the move.",
+    "border_radius": "rounded-xl (12px) for cards, rounded-full for main action buttons.",
+    "shadows": "Minimal. Use shadow-sm for active cards to separate from background. Flat UI prevents glare outdoors."
+  },
+  "components": {
+    "buttons": {
+      "primary": "h-16 w-full bg-[#FF5A00] rounded-full flex items-center justify-center text-white text-xl font-bold",
+      "success": "h-16 w-full bg-[#00C853] rounded-full flex items-center justify-center text-white text-xl font-bold",
+      "danger": "h-16 w-full bg-[#D50000] rounded-full flex items-center justify-center text-white text-xl font-bold",
+      "secondary_outline": "h-16 w-full border-2 border-[#0A0A0A] rounded-full flex items-center justify-center text-[#0A0A0A] text-lg font-bold"
+    },
+    "cards": {
+      "stop_card": "bg-white p-5 rounded-xl border-2 border-transparent border-b-[#E5E7EB] shadow-sm mb-4",
+      "active_stop_card": "bg-white p-5 rounded-xl border-2 border-[#FF5A00] shadow-md mb-4"
+    },
+    "badges": {
+      "cod": "bg-[#FFB300] px-4 py-2 rounded-full flex flex-row items-center border border-[#E6A800]",
+      "cod_text": "text-[#0A0A0A] font-black text-sm uppercase tracking-wide",
+      "status": "px-3 py-1 rounded-full text-sm font-bold"
+    },
+    "signature_pad": {
+      "container": "bg-white border-2 border-[#E5E7EB] rounded-xl h-72 w-full mt-4 relative flex items-center justify-center",
+      "header_text": "absolute top-4 left-4 right-4 text-center text-sm font-bold text-[#4B5563]"
+    }
+  },
+  "screens": {
+    "lista_paczek": {
+      "name": "Lista Paczek",
+      "description": "Main route list displaying AI-parsed stops from the uploaded PDF.",
+      "layout": "Fixed header with 'Wgraj Manifest PDF' button. Scrollable FlatList below.",
+      "list_item": {
+        "content": "Address (Large H2), Recipient Name, Package Count.",
+        "cod_indicator": "If COD > 0, massive amber badge pinned to top right or under address: 'POBRANIE: [Amount] PLN'.",
+        "action": "Tapping item navigates to Stop Detail."
+      }
+    },
+    "szczegoly_stopa": {
+      "name": "Szczegóły Stopa",
+      "description": "Detailed view of a single delivery stop.",
+      "layout": "Address at top, Recipient details, Package numbers list, prominent COD amount in center.",
+      "actions": {
+        "navigate": "Massive primary button 'Nawiguj' (Opens Google/Apple Maps).",
+        "outcomes": "Pinned bottom container with row of two massive buttons: 'Dostarczono' (Green) and 'Nieobecny' (Red)."
+      }
+    },
+    "dostarczono_flow": {
+      "name": "Dostarczono",
+      "description": "Proof of delivery screens after tapping 'Dostarczono'.",
+      "photo_step": "Full camera view to take photo of dropped package. Button: 'Zrób zdjęcie'.",
+      "signature_step": {
+        "layout": "White signature pad area.",
+        "auto_text": "Display dynamic text at top: 'Potwierdzam odebranie przesyłki nr [Numer] przez [Imię i Nazwisko]'.",
+        "action": "Massive button 'Zapisz i Zakończ'."
+      }
+    },
+    "nieobecny_flow": {
+      "name": "Adresat Nieobecny",
+      "description": "Flow when recipient is absent.",
+      "layout": "Confirmation screen summarizing failed delivery.",
+      "actions": "Massive button 'Wyślij SMS: Proszę o kontakt' (Opens native SMS app with prefilled text). Secondary button: 'Wróć do trasy'."
+    }
+  },
+  "accessibility_and_testing": {
+    "test_ids": "All buttons, inputs, and list items MUST include a data-testid attribute in kebab-case based on their role (e.g., data-testid='upload-manifest-btn', data-testid='mark-delivered-btn').",
+    "contrast": "Ensure text over primary buttons has a minimum contrast ratio of 4.5:1.",
+    "touch": "Minimum hit area for all pressables is 56x56px."
+  },
+  "media": {
+    "empty_state_illustration": "https://images.pexels.com/photos/6699401/pexels-photo-6699401.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+    "empty_state_description": "Driver in van looking at phone. Use for 'Brak tras' (No routes) or 'Wgraj Manifest PDF' state.",
+    "success_delivery_image": "https://images.pexels.com/photos/7843954/pexels-photo-7843954.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+    "success_delivery_description": "Woman courier checking package. Use for 'Wszystkie paczki dostarczone' (All packages delivered) end-of-day screen."
+  }
+}
