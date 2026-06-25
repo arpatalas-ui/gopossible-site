@@ -133,12 +133,8 @@ GEO_UA = "KurierNawigacja/1.0 (courier app)"
 
 
 def _geocode_sync(addr: str) -> Optional[Tuple[float, float]]:
-    """OSM Nominatim lookup with a couple of query fallbacks.
-
-    Photon (komoot.io) is currently unreachable from this server (TLS), so we
-    rely on Nominatim only. Concurrency is kept low to stay within the public
-    OSM policy of ~1 req/s.
-    """
+    """OSM Nominatim lookup. Tries the address as-is, then with Polish
+    diacritics stripped (XLS reports sometimes ship mangled diacritics)."""
     if not addr:
         return None
     queries = [addr + ", Polska", addr]
@@ -147,7 +143,20 @@ def _geocode_sync(addr: str) -> Optional[Tuple[float, float]]:
         if len(parts) >= 2:
             queries.append(", ".join(parts[-2:]) + ", Polska")
 
+    # Diacritic-stripped variants — rescue badly encoded city/street names.
+    stripped = _strip_pl(addr)
+    if stripped != addr:
+        queries.append(stripped + ", Polska")
+        if "," in stripped:
+            sparts = [p.strip() for p in stripped.split(",") if p.strip()]
+            if len(sparts) >= 2:
+                queries.append(", ".join(sparts[-2:]) + ", Polska")
+
+    seen = set()
     for q in queries:
+        if q in seen:
+            continue
+        seen.add(q)
         try:
             r = http_lib.get(
                 NOMINATIM_URL,
@@ -165,15 +174,44 @@ def _geocode_sync(addr: str) -> Optional[Tuple[float, float]]:
     return None
 
 
+def _norm_addr(addr: str) -> str:
+    return " ".join((addr or "").lower().split())
+
+
+async def _cache_lookup(addr: str) -> Optional[Tuple[float, float]]:
+    doc = await db.geocode_cache.find_one({"_id": _norm_addr(addr)}, {"_id": 0, "lat": 1, "lng": 1})
+    if doc and doc.get("lat") is not None and doc.get("lng") is not None:
+        return float(doc["lat"]), float(doc["lng"])
+    return None
+
+
+async def _cache_store(addr: str, lat: float, lng: float) -> None:
+    try:
+        await db.geocode_cache.update_one(
+            {"_id": _norm_addr(addr)},
+            {"$set": {"lat": lat, "lng": lng, "saved_at": utc_now_iso()}},
+            upsert=True,
+        )
+    except Exception:
+        pass
+
+
 async def geocode_stops(stops: List["Stop"]) -> None:
-    """Geocode all stops with a politeness limit (Nominatim policy: ~1 req/s)."""
+    """Geocode all stops with cache + politeness limit for Nominatim."""
     sem = asyncio.Semaphore(3)
 
     async def _g(s: "Stop") -> None:
+        if not s.address:
+            return
+        cached = await _cache_lookup(s.address)
+        if cached:
+            s.lat, s.lng = cached
+            return
         async with sem:
             coords = await asyncio.to_thread(_geocode_sync, s.address)
             if coords:
                 s.lat, s.lng = coords
+                await _cache_store(s.address, *coords)
 
     await asyncio.gather(*[_g(s) for s in stops])
 
@@ -217,6 +255,51 @@ def _spawn_background(coro):
 
 # ---------- XLS / XLSX manifest parser (Polish KSIĘGA ODDAWCZA report) ----------
 PHONE_RE = re.compile(r"(?:\+?48[\s\-]?)?(\d{3}[\s\-]?\d{3}[\s\-]?\d{3})")
+
+# Tokens that strongly hint a segment is a street (used to bias the recipient/address split).
+_STREET_HINTS = re.compile(r"\b(ul\.|al\.|pl\.|os\.|aleja|aleje|plac|osiedle|skwer|rondo|bulwar)\b", re.IGNORECASE)
+_HOUSE_NR_RE = re.compile(r"\b\d+[A-Za-z]?(?:\s*[/\-]\s*\d+[A-Za-z]?)?\b")
+
+# Polish diacritic stripper — used as a geocoder fallback because some XLS reports
+# come with mangled encodings (e.g. "Szćzećin" instead of "Szczecin").
+_PL_TABLE = str.maketrans(
+    "ąćęłńóśźżĄĆĘŁŃÓŚŹŻ",
+    "acelnoszzACELNOSZZ",
+)
+
+
+def _strip_pl(s: str) -> str:
+    return (s or "").translate(_PL_TABLE)
+
+
+def _split_recipient_address(text: str) -> Tuple[str, str]:
+    """Heuristic split of 'ADRESAT' column into (recipient_name, address).
+
+    Strategy: scan comma-separated segments and find the first segment that
+    looks like a street (contains a house number or street keyword). The
+    segment immediately BEFORE that is treated as the city, and everything
+    before the city is the recipient (so company names with internal commas
+    like 'Acme, Sp. z o.o.' stay intact).
+    """
+    parts = [p.strip() for p in (text or "").split(",") if p.strip()]
+    if len(parts) <= 1:
+        return (text or "").strip(), ""
+
+    street_idx = None
+    for i, p in enumerate(parts):
+        if _STREET_HINTS.search(p) or _HOUSE_NR_RE.search(p):
+            street_idx = i
+            break
+
+    if street_idx is None or street_idx == 0:
+        # Fall back to first-comma split when we can't find a street segment.
+        return parts[0], ", ".join(parts[1:])
+
+    # Segment before the street is the city. Everything before that is the recipient.
+    city_idx = street_idx - 1
+    recipient = ", ".join(parts[:city_idx]) if city_idx > 0 else parts[0]
+    address = ", ".join(parts[city_idx:])
+    return recipient.strip(), address.strip()
 
 
 def _parse_phone(text: str) -> Tuple[str, str]:
@@ -303,14 +386,8 @@ def parse_xls_manifest(file_bytes: bytes) -> List["Stop"]:
         # Phone first (so we strip it before splitting recipient/address).
         phone, adresat_str = _parse_phone(adresat_str)
 
-        # Split: first segment = recipient, rest = address parts.
-        parts = [p.strip() for p in adresat_str.split(",") if p.strip()]
-        if len(parts) >= 2:
-            recipient = parts[0]
-            address = ", ".join(parts[1:])
-        else:
-            recipient = adresat_str
-            address = ""
+        # Split recipient from address using the street-aware heuristic.
+        recipient, address = _split_recipient_address(adresat_str)
 
         cod = _zlgr_to_float(row.get(25), row.get(26))
         fees = _zlgr_to_float(row.get(28), row.get(29))
