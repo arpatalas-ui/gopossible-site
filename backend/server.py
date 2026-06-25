@@ -133,40 +133,21 @@ GEO_UA = "KurierNawigacja/1.0 (courier app)"
 
 
 def _geocode_sync(addr: str) -> Optional[Tuple[float, float]]:
-    """Try Photon first (no strict rate limit), then Nominatim as fallback."""
+    """OSM Nominatim lookup with a couple of query fallbacks.
+
+    Photon (komoot.io) is currently unreachable from this server (TLS), so we
+    rely on Nominatim only. Concurrency is kept low to stay within the public
+    OSM policy of ~1 req/s.
+    """
     if not addr:
         return None
-
     queries = [addr + ", Polska", addr]
     if "," in addr:
         parts = [p.strip() for p in addr.split(",") if p.strip()]
         if len(parts) >= 2:
             queries.append(", ".join(parts[-2:]) + ", Polska")
 
-    # 1) Photon
     for q in queries:
-        try:
-            r = http_lib.get(
-                PHOTON_URL,
-                params={"q": q, "limit": 1, "lang": "default"},
-                headers={"User-Agent": GEO_UA},
-                timeout=8,
-            )
-            if r.status_code != 200:
-                continue
-            data = r.json()
-            feats = data.get("features") or []
-            if feats:
-                coords = feats[0].get("geometry", {}).get("coordinates")
-                # only accept Polish hits (Photon doesn't have countrycode filter)
-                country = (feats[0].get("properties", {}) or {}).get("country") or ""
-                if coords and len(coords) >= 2 and ("Pol" in country or country == ""):
-                    return float(coords[1]), float(coords[0])
-        except Exception:
-            continue
-
-    # 2) Nominatim fallback (rate-limited, last resort)
-    for q in queries[:1]:
         try:
             r = http_lib.get(
                 NOMINATIM_URL,
@@ -185,8 +166,8 @@ def _geocode_sync(addr: str) -> Optional[Tuple[float, float]]:
 
 
 async def geocode_stops(stops: List["Stop"]) -> None:
-    """Geocode all stops in parallel (Photon allows ~10 req/s; we use 6 concurrent)."""
-    sem = asyncio.Semaphore(6)
+    """Geocode all stops with a politeness limit (Nominatim policy: ~1 req/s)."""
+    sem = asyncio.Semaphore(3)
 
     async def _g(s: "Stop") -> None:
         async with sem:
@@ -195,6 +176,43 @@ async def geocode_stops(stops: List["Stop"]) -> None:
                 s.lat, s.lng = coords
 
     await asyncio.gather(*[_g(s) for s in stops])
+
+
+async def _background_geocode_route(route_id: str) -> None:
+    """Geocode + persist coordinates for a route in the background.
+
+    Runs detached from the upload request so the client receives an immediate
+    response while geocoding 100+ addresses (which can take 30-60 s) finishes
+    behind the scenes. Subsequent GET /api/routes/{id} calls pick up the
+    coordinates as they are written.
+    """
+    try:
+        logging.info("Background geocode started for %s", route_id)
+        doc = await db.routes.find_one({"id": route_id}, {"_id": 0})
+        if not doc:
+            logging.warning("Background geocode: route %s not found", route_id)
+            return
+        stops = [Stop(**s) for s in doc.get("stops", [])]
+        await geocode_stops(stops)
+        ok = sum(1 for s in stops if s.lat is not None)
+        await db.routes.update_one(
+            {"id": route_id},
+            {"$set": {"stops": [s.model_dump() for s in stops]}},
+        )
+        logging.info("Background geocode finished for %s (%d/%d stops)", route_id, ok, len(stops))
+    except Exception:
+        logging.exception("Background geocode failed for %s", route_id)
+
+
+# Strong references prevent the task from being garbage-collected before it completes.
+_BG_TASKS: set = set()
+
+
+def _spawn_background(coro):
+    task = asyncio.create_task(coro)
+    _BG_TASKS.add(task)
+    task.add_done_callback(_BG_TASKS.discard)
+    return task
 
 
 # ---------- XLS / XLSX manifest parser (Polish KSIĘGA ODDAWCZA report) ----------
@@ -436,15 +454,14 @@ async def upload_manifest(req: ManifestUploadRequest):
     else:
         raise HTTPException(status_code=400, detail="Nieobsługiwany format pliku (oczekiwany PDF, XLS lub XLSX)")
 
-    # Geocode all addresses via Photon / Nominatim
-    try:
-        await geocode_stops(stops)
-    except Exception:
-        logging.exception("Geocoding failed (continuing with empty coords)")
-
     name = (req.name or "").strip() or f"Trasa {datetime.now(timezone.utc).strftime('%d.%m.%Y %H:%M')}"
     route = Route(name=name, stops=stops)
     await db.routes.insert_one(route.model_dump())
+
+    # Geocode in the background so the client gets the route immediately.
+    # 100+ Photon lookups can take ~30-60 s and easily exceed ingress timeouts.
+    _spawn_background(_background_geocode_route(route.id))
+
     return route.model_dump()
 
 

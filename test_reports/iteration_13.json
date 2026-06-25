@@ -1,0 +1,56 @@
+{
+  "summary": "Iteration 13 — XLS upload async bug fix VERIFIED end-to-end. Backend: POST /api/manifest/upload with the user's 132-row XLS now returns HTTP 200 in ~0.4s (was hanging 60+ s). All 132 stops parsed correctly with recipient, address, phone, cod_amount, extra_fees, is_cod, package_numbers. Background geocoding task spawns and is held in _BG_TASKS (no GC). Frontend (mobile 390x844): upload-manifest-btn picks the .xls, the 'AI parsuje…' spinner disappears within a couple of seconds, app navigates to /route/{id}, and the stop list (132 stops, 2612.62 PLN COD) renders with addresses/recipients/COD even though pins are not yet placed. The original user-visible bug is fixed. CRITICAL secondary finding: Nominatim (nominatim.openstreetmap.org) is currently returning HTTP 429 'Too many requests' to this server's IP, so the background geocoder is producing 0 successful lookups for new uploads (50→7→0 across three consecutive runs). The previously-implemented Photon fallback is disabled (commented out in code) because TLS to photon.komoot.io fails from this host. Result: route list opens fine, but map pins will not appear until rate-limit clears or an alternative geocoder is wired up.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "background _geocode_sync via Nominatim",
+        "issue": "Nominatim returns HTTP 429 from this server (confirmed via curl). Background geocode finished 0/132 stops on the latest upload (previous runs: 50/132, then 7/132 — degrading). The UI's map-pin feature relies on this and will silently never populate. Action: re-enable / fix Photon (TLS) fallback, OR cache successful geocodes in DB and skip on re-upload, OR throttle to <1 req/s with retry-after handling, OR use a paid geocoder. The /api/routes/{id}/regeocode endpoint will also fail under current conditions.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "/route/{id}",
+        "issues": [
+          "Map placeholder copy 'Mapa będzie dostępna gdy AI rozpozna współrzędne adresów. Wgraj manifest ponownie aby uzupełnie dane.' tells the user to re-upload the manifest — but the geocoder runs in the background, so a refresh of the route view will eventually populate the map without re-upload. Copy should say 'Trwa rozpoznawanie adresów… ta strona zaktualizuje się automatycznie' and the screen should poll GET /api/routes/{id} every ~15 s while any stop still has lat==null."
+        ]
+      }
+    ],
+    "react_native_issues": [
+      {
+        "component": "deprecated style/prop warnings",
+        "issue": "Console shows: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' and 'props.pointerEvents is deprecated. Use style.pointerEvents'. Likely from RN 0.74+/RNW. Reference: appears on home and route screens."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_upload_async_geocode.py",
+    "/app/test_reports/pytest/iteration_13.xml"
+  ],
+  "action_items": [
+    "Fix geocoding source: Nominatim is blocking this server (HTTP 429). Either (a) restore the Photon fallback with proper TLS / requests.get(verify=…), (b) add an alternative provider (LocationIQ free tier, Mapbox, Google), or (c) batch-cache previously seen addresses in MongoDB so re-uploads don't re-hit the API.",
+    "Update /route/{id} screen: while ANY stop has lat==null, poll GET /api/routes/{id} every 10-15 s and re-render the map; replace the 'wgraj manifest ponownie' wording with a non-blocking 'pinning addresses…' indicator.",
+    "Address deprecated RN web warnings (shadow*, pointerEvents) when convenient."
+  ],
+  "critical_code_review_comments": [
+    "server.py — _BG_TASKS pattern is correct; tasks survive GC. However, if uvicorn reloads (which happens on any file change in /app/backend including __pycache__), in-flight background tasks die silently. For production this is fine, but for dev/test it's worth filtering watchfiles to *.py only.",
+    "_background_geocode_route writes the entire stops array back at the end. If geocoding takes 3+ minutes, no partial progress is visible to clients — consider periodic flushes (e.g. every 10 stops) so the map fills in progressively."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_upload_async_geocode.py (new)"
+  ],
+  "success_rate": {
+    "backend": "87% (7/8 — only failure is the Nominatim-blocked background-geocode progress test; upload bug fix itself is 100%)",
+    "frontend": "100% (upload → navigate → stop list render verified)"
+  },
+  "seed_data_creation": "Test created and then deleted a route per upload (TEST_iteration13). Also cleaned up older TEST_ routes left by previous iterations.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "The reported user bug ('AI parsuje…' spinner forever) is RESOLVED — verified via internal POST (<0.5 s) and via the public mobile preview (navigation to /route/{id} within seconds, 132 stops listed). The lingering issue is independent: Nominatim is rate-limiting this server's IP so map pins are not being filled in. If the main agent ships a new geocoder, retest using /app/backend/tests/test_upload_async_geocode.py (the test_background_geocoding_progresses test asserts ≥10 stops geocoded within 3 min).",
+  "rca_of_issue": "Original bug RCA: previous implementation awaited geocode_stops() for all 132 addresses inside POST /api/manifest/upload. Each Nominatim call has a 10 s timeout and up to 3 query fallbacks. Even with semaphore=3 concurrency the call routinely exceeded the ingress's read timeout (~60 s), so the fetch on the Expo side never resolved and the UI sat on 'AI parsuje…' forever. Fix (already shipped): parse XLS/PDF synchronously, persist Route to MongoDB, return the Route immediately, and spawn an asyncio.create_task(_background_geocode_route(route_id)) held in module-level _BG_TASKS. POST now returns in tens of ms. Verified locally and on the public preview."
+}
