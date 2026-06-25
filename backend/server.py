@@ -318,11 +318,6 @@ async def geocode_one(addr: str) -> Optional[Tuple[float, float]]:
     if stripped and stripped != norm:
         _push(stripped + ", Polska")
 
-    def _accept(coords: Tuple[float, float]) -> bool:
-        if not prior:
-            return True
-        return _math_distance_km(coords, prior["center"]) <= prior["max_km"]
-
     if LOCATIONIQ_KEY:
         # Stage 1 — strict city bbox
         if prior:
