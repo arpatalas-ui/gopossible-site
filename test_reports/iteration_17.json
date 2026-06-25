@@ -1,0 +1,42 @@
+{
+  "summary": "Iteration 17 — backend regression after splitting server.py (1098 lines) into modular app_core/* (db, models, geocoder, parser, routers/routes, routers/transfer). Zero regressions: 20/20 iteration-16 tests PASS in 8.49s AND a new supplementary suite of 10 tests covering deliver/absent/reset lifecycle, get_stop, list_routes (no _id leak), regeocode 404, and Szczecin bias on the SECOND reference route (1145d1f9...) PASS in 2.06s. Combined: 30/30 PASS. Verified endpoints: POST /api/transfer/create (auth + 401/400 cases + 200 shape), GET /api/transfer/{code} (404 / 200 / case-insensitive / claimed_at set), GET /api/transfer/{code}/status (no auth, 404/200), POST /api/routes/{id}/approve + /unapprove (idempotent timestamp refresh, 404 on unknown, persistence via GET), POST /api/routes/{id}/stops/{sid}/address (empty→400, unknown→404, Szczecin address geocodes within 35 km, gibberish returns geocoded=false with null lat/lng, persists), POST /api/manifest/upload (live XLS path exercised through transfer/create which calls parse_xls_manifest), GET /api/routes (list, 200, _id stripped, both reference routes present), GET /api/routes/{id} (200/404), DELETE /api/routes/{id} (cleanup works, 200), POST /api/routes/{id}/regeocode (404 path; 200 path intentionally not invoked on reference data — iter16 pin-distance test already validates accuracy), POST /api/routes/{id}/stops/{sid}/deliver (status=delivered, completed_at set, 404), POST /api/routes/{id}/stops/{sid}/absent (status=absent, note saved, 404), POST /api/routes/{id}/stops/{sid}/reset (status=pending, fields cleared, 404), GET /api/routes/{id}/stops/{sid} (200/404 for both unknown route and unknown stop). Szczecin bias preserved on BOTH reference routes: ROUTE_A 8c0a5cbe (162/167 geocoded, 0 pins >35 km) and ROUTE_B 1145d1f9 (163/167 geocoded, 0 pins >35 km) — geocoder.py module behaves identically to the pre-refactor implementation. server.py is now 34 lines (was 1098).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration16_transfer_approve_address.py",
+    "/app/backend/tests/test_iteration17_refactor_regression.py",
+    "/app/test_reports/pytest/iteration_17.xml",
+    "/app/test_reports/pytest/iteration_17_supp.xml"
+  ],
+  "action_items": [
+    "None blocking — refactor is clean. Optional nit: app_core/__init__.py and app_core/routers/__init__.py are empty; could add module docstrings for consistency with the other files."
+  ],
+  "critical_code_review_comments": [
+    "server.py is now 34 lines — well within the 700-line guideline. Clean separation: db (env+client), models (Pydantic), geocoder (LocationIQ + Szczecin priors), parser (XLS + PDF/Gemini), routers/routes (CRUD), routers/transfer (gopossible).",
+    "Background geocode task tracking in routers/routes.py uses a module-level set with add_done_callback discard — this is correct and prevents the 'task was destroyed but it is pending' warning. Good catch by the developer.",
+    "db.py uses os.environ['MONGO_URL'] (fail-fast on missing) for required vars and os.environ.get(...) for optional API keys — appropriate.",
+    "All endpoints still strip MongoDB _id either via projection ({'_id': 0}) or pop — no _id leakage observed in list/get/stop responses.",
+    "router prefix is set centrally in server.py (api_router = APIRouter(prefix='/api')) and individual routers don't re-add /api — clean.",
+    "Models import shape (..models import Stop, Route, ...) in routers works because of FastAPI's standard package layout. The empty __init__.py files in app_core/ and app_core/routers/ are sufficient for relative imports."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration17_refactor_regression.py (new — 10 supplementary regression tests)"
+  ],
+  "success_rate": {
+    "backend": "100% (30/30 — 20 iter16 + 10 iter17 supplementary)",
+    "frontend": "not tested (backend-only request per review_request)"
+  },
+  "seed_data_creation": "Iter16 fixture creates one TEST_iter16_transfer route + transfer code and deletes it in teardown (verified via backend log: DELETE /api/routes/b1fb33cc-... → 200). Iter17 tests mutate ROUTE_A's last stop via deliver/absent/reset but the reset call restores status=pending, completed_at=null, note=null — no persistent dirty data left behind. Iter16 sets approved_at on ROUTE_A then clears it via the unapprove test (final state: approved_at=null).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Refactor is verified. Two regression suites to re-run for any future backend change: /app/backend/tests/test_iteration16_transfer_approve_address.py (20 tests, ~8s) and /app/backend/tests/test_iteration17_refactor_regression.py (10 tests, ~2s). Both use EXPO_PUBLIC_BACKEND_URL with localhost:8001 fallback. Live LocationIQ + MongoDB + (for iter16) Emergent LLM via Gemini are exercised. ROUTE_A=8c0a5cbe-8372-4ea5-a678-4191b163c10b and ROUTE_B=1145d1f9-940a-44c1-9baf-25e56af4eff1 are reference fixtures — do not delete. GOPOSSIBLE_API_KEY for transfer/create is in env (verified via test_transfer_create_success_shape passing 200).",
+  "rca_of_issue": "N/A — refactor regression verification; zero issues found."
+}
