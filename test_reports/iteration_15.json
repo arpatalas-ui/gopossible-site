@@ -1,0 +1,39 @@
+{
+  "summary": "Iteration 15 — full verification (backend + frontend) of the three fixes for the 'brak współrzędnych' bug. ALL 4 pytest cases passed. (1) `_background_geocode_route` source inspection confirms per-stop `db.routes.update_one({'id':..,'stops.id':..}, {'$set':{'stops.$.lat':.., 'stops.$.lng':..}})` INSIDE the loop — no legacy batch write. (2) `_nominatim_paced` direct unit test: two consecutive calls measured 1.24s elapsed for the gap (≥1.0s required) — global asyncio.Lock + monotonic timestamp working as expected. (3) End-to-end POST /api/manifest/upload of the user's 132-stop XLS returned 200 in <5s; polling /api/routes/{id} every 10s showed snapshots [0, 0, 5] — incremental writes now visible (5 stops geocoded by ~30s, vs the old behaviour where lat/lng was only flushed at the very end). (4) Frontend navigate screen at /route/94b7dc6d.../stop/614bde9d.../navigate (target stop has lat=null) now shows 'Rozpoznawanie adresu… mapa pojawi się za chwilę. Możesz już dzwonić, wysyłać SMS lub oznaczyć dostawę.' — the OLD 'Wgraj manifest ponownie' copy is GONE. Network listener captured 3 hits to /api/routes/{id} within 20s (1 initial + 2 polls @ ~8s interval), satisfying ≥2 polls/20s. Smoke test: home (GO KURIER. + manifest upload button + route list rendering 'POBRANIE 3305.34 PLN' etc.) renders cleanly with no console errors.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration15_incremental_geocode.py",
+    "/app/test_reports/pytest/iteration_15.xml"
+  ],
+  "action_items": [
+    "No blockers. Optional follow-up: 'shadow*' style props deprecation warnings appear in console (multiple components use shadowColor/shadowOpacity/shadowRadius/shadowOffset) — RN-web is asking for `boxShadow` instead. Cosmetic only, not blocking. Also 'props.pointerEvents is deprecated. Use style.pointerEvents' on the SafeAreaView used as compass/top-bar wrap in navigate.tsx."
+  ],
+  "critical_code_review_comments": [
+    "_background_geocode_route correctly uses positional $ operator with a per-stop $set; this is exactly the recommended Mongo pattern for partial array updates and works under concurrent reads from the polling frontend.",
+    "_nominatim_paced is a clean implementation: module-level asyncio.Lock prevents concurrent calls from different background tasks (e.g. two uploads in flight), and the monotonic timestamp under the lock guarantees ≥1.1s spacing regardless of which coroutine wins the lock first. _LAST_NOMINATIM_CALL is updated AFTER the call returns, which is the safer choice (accounts for slow Nominatim responses).",
+    "Frontend polling effect in navigate.tsx is correctly bounded: timer cleared on unmount via the `cancelled` flag and explicit clearTimeout, and the polling automatically stops as soon as `r.stops.some(s => s.lat == null) === false`.",
+    "server.py is now 690 lines (was 670 in iter 14). The 700-line threshold is imminent — recommend splitting XLS parser + geocoder into their own modules before the next feature.",
+    "Minor: in geocode_one, the diacritic-stripped fallback is queued AFTER the original variants. If Nominatim rate-limits on the first attempts, the fallback may never run. Consider reordering when the address contains Polish-like garbage (e.g. 'ć' next to 'z') — but this is an optimization, not a bug."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration15_incremental_geocode.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (4/4)",
+    "frontend": "100% (placeholder copy + polling + smoke all pass)"
+  },
+  "seed_data_creation": "Test creates 'TEST_iter15_incremental' route during upload and deletes it in finally-block teardown.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "All three iter-15 fixes are verified live: per-stop Mongo writes in _background_geocode_route, ≥1.1s Nominatim pacing via asyncio.Lock+monotonic, and frontend polling every 8s on /route/{id}/stop/{sid}/navigate when any stop is missing coords (with the updated placeholder copy). The throughput problem flagged in iterations 13/14 is now mitigated — partial progress is visible while geocoding runs, so the user no longer sees a stale 'brak współrzędnych' even when Nominatim hasn't finished all 132 lookups yet. Carry-over note: a few cosmetic RN-web deprecation warnings (shadow* props, pointerEvents prop) remain — not blocking, can be cleaned up in a polish pass.",
+  "rca_of_issue": "Original user-visible symptom: navigate screen always showed 'Brak współrzędnych dla tego stopa. Wgraj manifest ponownie aby uzupełnić mapę.' even after a successful upload. Two root causes (now both fixed): (a) the background geocoder accumulated lat/lng in-memory and did a single batch write at the END of the run, so if Nominatim rate-limited mid-batch (which it does — ~120 sequential lookups from this IP trigger 429/empty responses), the route document still had every stop with lat=None until the loop finally completed (or never, if it timed out). (b) the frontend fetched the route once at mount and never re-fetched, so even after the backend eventually finished, the open navigate screen still rendered the stale 'no coords' branch. Fix (a): rewrite _background_geocode_route to call db.routes.update_one(stops.$.lat,stops.$.lng) immediately after each successful geocode — partial progress now lands in Mongo within seconds. Fix (b): add a useEffect in navigate.tsx that re-fetches /api/routes/{id} every 8 s as long as any stop has lat==null, then stops polling. Fix (c, supporting): wrap Nominatim calls in _nominatim_paced (asyncio.Lock + monotonic clock) to enforce the OSM 1 req/s policy from a single source of truth, preventing parallel uploads from torching each other's quota."
+}

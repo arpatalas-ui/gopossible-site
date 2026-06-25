@@ -9,6 +9,7 @@ import io
 import json
 import logging
 import re
+import time
 import uuid
 import tempfile
 from pathlib import Path
@@ -133,17 +134,55 @@ GEO_UA = "KurierNawigacja/1.0 (courier app)"
 
 
 def _geocode_sync(addr: str) -> Optional[Tuple[float, float]]:
-    """OSM Nominatim lookup. Tries the address as-is, then with Polish
-    diacritics stripped (XLS reports sometimes ship mangled diacritics)."""
+    """Single Nominatim query (one HTTP call). Callers handle pacing."""
     if not addr:
         return None
+    try:
+        r = http_lib.get(
+            NOMINATIM_URL,
+            params={"q": addr, "format": "json", "limit": 1, "countrycodes": "pl"},
+            headers={"User-Agent": GEO_UA, "Accept-Language": "pl"},
+            timeout=10,
+        )
+        if r.status_code != 200:
+            return None
+        data = r.json()
+        if data:
+            return float(data[0]["lat"]), float(data[0]["lon"])
+    except Exception:
+        pass
+    return None
+
+
+# Serialise Nominatim calls and enforce the 1 req/s policy across all background work.
+_NOMINATIM_LOCK = asyncio.Lock()
+_LAST_NOMINATIM_CALL = 0.0
+
+
+async def _nominatim_paced(query: str) -> Optional[Tuple[float, float]]:
+    global _LAST_NOMINATIM_CALL
+    async with _NOMINATIM_LOCK:
+        now = time.monotonic()
+        wait = 1.1 - (now - _LAST_NOMINATIM_CALL)
+        if wait > 0:
+            await asyncio.sleep(wait)
+        result = await asyncio.to_thread(_geocode_sync, query)
+        _LAST_NOMINATIM_CALL = time.monotonic()
+    return result
+
+
+async def geocode_one(addr: str) -> Optional[Tuple[float, float]]:
+    """Cache-aware single address geocode (used by callers individually)."""
+    if not addr:
+        return None
+    cached = await _cache_lookup(addr)
+    if cached:
+        return cached
     queries = [addr + ", Polska", addr]
     if "," in addr:
         parts = [p.strip() for p in addr.split(",") if p.strip()]
         if len(parts) >= 2:
             queries.append(", ".join(parts[-2:]) + ", Polska")
-
-    # Diacritic-stripped variants — rescue badly encoded city/street names.
     stripped = _strip_pl(addr)
     if stripped != addr:
         queries.append(stripped + ", Polska")
@@ -151,26 +190,15 @@ def _geocode_sync(addr: str) -> Optional[Tuple[float, float]]:
             sparts = [p.strip() for p in stripped.split(",") if p.strip()]
             if len(sparts) >= 2:
                 queries.append(", ".join(sparts[-2:]) + ", Polska")
-
-    seen = set()
+    seen: set = set()
     for q in queries:
         if q in seen:
             continue
         seen.add(q)
-        try:
-            r = http_lib.get(
-                NOMINATIM_URL,
-                params={"q": q, "format": "json", "limit": 1, "countrycodes": "pl"},
-                headers={"User-Agent": GEO_UA, "Accept-Language": "pl"},
-                timeout=10,
-            )
-            if r.status_code != 200:
-                continue
-            data = r.json()
-            if data:
-                return float(data[0]["lat"]), float(data[0]["lon"])
-        except Exception:
-            continue
+        coords = await _nominatim_paced(q)
+        if coords:
+            await _cache_store(addr, *coords)
+            return coords
     return None
 
 
@@ -197,46 +225,37 @@ async def _cache_store(addr: str, lat: float, lng: float) -> None:
 
 
 async def geocode_stops(stops: List["Stop"]) -> None:
-    """Geocode all stops with cache + politeness limit for Nominatim."""
-    sem = asyncio.Semaphore(3)
-
-    async def _g(s: "Stop") -> None:
-        if not s.address:
-            return
-        cached = await _cache_lookup(s.address)
-        if cached:
-            s.lat, s.lng = cached
-            return
-        async with sem:
-            coords = await asyncio.to_thread(_geocode_sync, s.address)
+    """Geocode stops (legacy helper — used by /regeocode endpoint)."""
+    for s in stops:
+        if s.address and s.lat is None:
+            coords = await geocode_one(s.address)
             if coords:
                 s.lat, s.lng = coords
-                await _cache_store(s.address, *coords)
-
-    await asyncio.gather(*[_g(s) for s in stops])
 
 
 async def _background_geocode_route(route_id: str) -> None:
-    """Geocode + persist coordinates for a route in the background.
-
-    Runs detached from the upload request so the client receives an immediate
-    response while geocoding 100+ addresses (which can take 30-60 s) finishes
-    behind the scenes. Subsequent GET /api/routes/{id} calls pick up the
-    coordinates as they are written.
-    """
+    """Geocode stops in the background and persist EACH success immediately,
+    so map pins appear progressively while the courier is still on the screen."""
     try:
         logging.info("Background geocode started for %s", route_id)
         doc = await db.routes.find_one({"id": route_id}, {"_id": 0})
         if not doc:
             logging.warning("Background geocode: route %s not found", route_id)
             return
-        stops = [Stop(**s) for s in doc.get("stops", [])]
-        await geocode_stops(stops)
-        ok = sum(1 for s in stops if s.lat is not None)
-        await db.routes.update_one(
-            {"id": route_id},
-            {"$set": {"stops": [s.model_dump() for s in stops]}},
-        )
+        stops = doc.get("stops", [])
+        ok = 0
+        for s in stops:
+            if s.get("lat") is not None and s.get("lng") is not None:
+                ok += 1
+                continue
+            coords = await geocode_one(s.get("address", ""))
+            if coords:
+                lat, lng = coords
+                await db.routes.update_one(
+                    {"id": route_id, "stops.id": s["id"]},
+                    {"$set": {"stops.$.lat": lat, "stops.$.lng": lng}},
+                )
+                ok += 1
         logging.info("Background geocode finished for %s (%d/%d stops)", route_id, ok, len(stops))
     except Exception:
         logging.exception("Background geocode failed for %s", route_id)

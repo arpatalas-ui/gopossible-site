@@ -93,10 +93,30 @@ export default function NavigateScreen() {
   const [heading, setHeading] = useState<number | null>(null);
   const [follow, setFollow] = useState(true);
 
-  // Load route data
+  // Load route data (with polling while any stop lacks coordinates).
   useEffect(() => {
     if (!id) return;
-    api.getRoute(id).then(setRoute).catch((e) => setError(e?.message || "Błąd ładowania trasy"));
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const fetchOnce = async () => {
+      try {
+        const r = await api.getRoute(id);
+        if (cancelled) return;
+        setRoute(r);
+        const missing = r.stops.some((s) => s.lat == null || s.lng == null);
+        if (missing && !cancelled) {
+          timer = setTimeout(fetchOnce, 8000);
+        }
+      } catch (e: any) {
+        if (!cancelled) setError(e?.message || "Błąd ładowania trasy");
+      }
+    };
+    fetchOnce();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
   }, [id]);
 
   // Request location permission contextually
@@ -266,7 +286,7 @@ export default function NavigateScreen() {
       {/* Map */}
       <View style={styles.mapContainer}>
         {noTargetCoords ? (
-          <PlaceholderMap message="Brak współrzędnych dla tego stopa. Wgraj manifest ponownie aby uzupełnić mapę." />
+          <PlaceholderMap message="Rozpoznawanie adresu… mapa pojawi się za chwilę. Możesz już dzwonić, wysyłać SMS lub oznaczyć dostawę." />
         ) : (
           <NavigateMap
             user={navigating ? user : null}
