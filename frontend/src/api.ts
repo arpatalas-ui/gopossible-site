@@ -93,4 +93,8 @@ export const api = {
       `/routes/${routeId}/stops/${stopId}/address`,
       { method: "POST", body: JSON.stringify({ address }) },
     ),
+  reportUrl: (routeId: string, courier?: string) => {
+    const params = courier ? `?courier=${encodeURIComponent(courier)}` : "";
+    return `${BASE}/api/routes/${routeId}/report${params}`;
+  },
 };

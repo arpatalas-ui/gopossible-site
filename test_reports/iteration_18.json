@@ -1,0 +1,44 @@
+{
+  "summary": "Iteration 18 — End-of-day PDF report endpoint + bottom-tab navigation refactor verified end-to-end with zero regressions. Backend: new GET /api/routes/{id}/report endpoint passes 6/6 tests (200 + application/pdf + %PDF- magic bytes + %%EOF trailer + size > 1KB (actual: large multi-page PDF with embedded signatures/photos) + Content-Disposition filename includes route_id[:8] + courier query param variant + 404 on unknown route). Full iteration-16 + iteration-17 regression suite re-run: 30/30 PASS in 10.96s (transfer, approve/unapprove, address update, deliver/absent/reset lifecycle, regeocode 404, list_routes _id stripping, Szczecin bias on both reference routes). Combined backend: 36/36 PASS. Frontend smoke: home tab (/) loads with TRASA tab highlighted, upload + routes list + bottom tab bar with map + person icons visible; /courier loads with STATYSTYKI DZISIAJ + DO ROZLICZENIA + HISTORIA TRAS (19 routes) + GENERUJ RAPORT KOŃCA DNIA (PDF) button + EDYTUJ button; profile edit modal works — typing 'Test User' → SAVE → name persisted to AsyncStorage and header updates to 'Test User' immediately; tab bar navigation (KURIER ↔ TRASA) works via expo-router a[href] anchors; /route/8c0a5cbe-... still loads as Stack screen with NO tab bar visible (Stack route correctly isolated from (tabs) group). No red screens, no Unmatched Route errors, no console errors.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "expo / expo-font / expo-router (minor)", "issue": "Expo CLI reports out-of-date versions vs SDK 54: expo@54.0.34 (expected ~54.0.35), expo-font@14.0.11 (expected ~14.0.12), expo-router@6.0.23 (expected ~6.0.24). Non-blocking warning, app boots and runs fine. Reference: /var/log/supervisor/expo.err.log"}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration18_pdf_report.py",
+    "/app/test_reports/pytest/iteration_18.xml",
+    "/app/test_reports/pytest/iteration_18_regression.xml"
+  ],
+  "action_items": [
+    "Optional: run `npx expo install --check --fix` to bump expo / expo-font / expo-router to the SDK-54 expected patch versions. Not blocking — app works as-is.",
+    "Optional UX: on first load of /courier, the avatar circle shows 'K' from 'Kurier' fallback while profile.name is empty. Once a name is saved, the initial becomes correct (e.g. 'T' for Test User). Consider a placeholder hint inside the header (e.g. 'Ustaw profil →') to nudge first-time setup. Cosmetic only."
+  ],
+  "critical_code_review_comments": [
+    "/app/backend/app_core/report.py: clean ReportLab implementation — `_img_from_b64` swallows decode errors and returns None, so any malformed base64 in signatures/photos won't crash report generation (good defensive coding). PDF layout uses GoPossible brand colour (#E63329) consistently. COD + extra_fees summed correctly.",
+    "/app/backend/app_core/routers/routes.py:125-141 — report endpoint correctly returns `Response(media_type='application/pdf', ...)` with proper Content-Disposition header. 404 path also handled. Streams the full PDF in-memory which is fine for typical 167-stop routes (PDF size verified > 1KB and well-formed).",
+    "/app/frontend/app/(tabs)/_layout.tsx — minimal, idiomatic Tabs config. Active tint = colors.primary, inactive = colors.textSecondary, both icons from Ionicons (map / person-circle). 64px tab bar height meets >44px touch target.",
+    "/app/frontend/app/(tabs)/courier.tsx — well-structured: AsyncStorage for profile + settings persistence, useFocusEffect for reloading routes on tab switch, modal-based profile edit with all required testIDs (edit-profile, profile-name-input, save-profile, download-report-btn, history-pdf-{id}, auto-advance-toggle). `reportUrl(routeId, profile.name)` is built client-side and opened via window.open on web / Share on native. 506 lines — under 700 guideline.",
+    "/app/frontend/app/_layout.tsx — Stack screenOptions={{ headerShown: false }} delegates header rendering to individual screens. (tabs) group is auto-detected as a route by expo-router. /route/[id] correctly renders as a stack screen WITHOUT the tab bar (verified visually).",
+    "All 6 frontend testIDs found on /courier (edit-profile, profile-name-input, save-profile, download-report-btn, history-pdf-{id}, auto-advance-toggle) — main agent followed testID conventions."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration18_pdf_report.py (new — 6 tests covering PDF report endpoint)"
+  ],
+  "success_rate": {
+    "backend": "100% (36/36 — 6 new PDF report tests + 30 iteration-17 regression)",
+    "frontend": "100% smoke (5/5 — home loads, courier loads, tabs visible, profile edit works, stack route /route/[id] still works without tabs)"
+  },
+  "seed_data_creation": "No persistent seed data created. Backend tests are read-only on the PDF endpoint (no mutations). Frontend test saved 'Test User' to AsyncStorage on the test browser session (PROFILE_KEY=@gopossible/courier_profile_v1) — this is per-browser and does not affect any other user/session.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Iteration 18 adds the GET /api/routes/{id}/report?courier=<name> endpoint (PDF binary via ReportLab in /app/backend/app_core/report.py) and refactors frontend nav into (tabs) group. Regression suites to re-run for any future change: /app/backend/tests/test_iteration16_transfer_approve_address.py (20 tests, ~9s) + /app/backend/tests/test_iteration17_refactor_regression.py (10 tests, ~2s) + /app/backend/tests/test_iteration18_pdf_report.py (6 tests, ~0.3s) = 36 total. Reference routes still ROUTE_A=8c0a5cbe-8372-4ea5-a678-4191b163c10b and ROUTE_B=1145d1f9-940a-44c1-9baf-25e56af4eff1 (do not delete). Frontend tabs: /  → app/(tabs)/index.tsx (TRASA), /courier → app/(tabs)/courier.tsx (KURIER). Stack routes /route/[id], /route/[id]/review, /route/[id]/stop/[stopId], /scan are outside (tabs) and render WITHOUT bottom tab bar — verified visually on /route/8c0a5cbe-...",
+  "rca_of_issue": "N/A — feature acceptance + regression verification; zero issues found."
+}

@@ -10,6 +10,8 @@ from ..models import (
 )
 from ..parser import parse_manifest_to_route
 from ..geocoder import background_geocode_route, geocode_one, geocode_stops
+from ..report import build_route_pdf
+from fastapi import Response, Query
 
 router = APIRouter()
 
@@ -118,6 +120,25 @@ async def regeocode_route(route_id: str):
         {"$set": {"stops": [s.model_dump() for s in stops]}},
     )
     return {"ok": True, "stops": len(stops), "geocoded": sum(1 for s in stops if s.lat is not None)}
+
+
+@router.get("/routes/{route_id}/report")
+async def route_report(route_id: str, courier: str = Query("", description="Imię i nazwisko kuriera")):
+    """Generate the end-of-day PDF report for a route.
+
+    Includes signatures and photos (base64 from stops) plus COD summary. Returned
+    as `application/pdf` binary — frontend can download or share it.
+    """
+    route = await db.routes.find_one({"id": route_id}, {"_id": 0})
+    if not route:
+        raise HTTPException(status_code=404, detail="Trasa nie znaleziona")
+    pdf_bytes = build_route_pdf(route, courier_name=courier)
+    filename = f"raport-{route_id[:8]}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/routes/{route_id}/stops/{stop_id}")
