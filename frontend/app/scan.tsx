@@ -174,7 +174,7 @@ export default function ScanScreen() {
         </View>
         {err && <Text style={styles.errText}>{err}</Text>}
         <Text style={styles.hint}>
-          Wygeneruj kod na <Text style={{ fontWeight: "900" }}>gopossible.pl</Text> w sekcji „Wyślij trasę".
+          Wygeneruj kod na <Text style={{ fontWeight: "900" }}>gopossible.pl</Text> w sekcji &bdquo;Wyślij trasę&rdquo;.
           Kod ważny 24h.
         </Text>
       </View>

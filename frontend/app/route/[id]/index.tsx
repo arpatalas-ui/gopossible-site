@@ -81,12 +81,46 @@ export default function RouteScreen() {
           contentContainerStyle={styles.listContent}
           ListHeaderComponent={
             route && route.stops.length > 0 ? (
-              <View style={styles.mapWrap}>
-                <RouteMap
-                  stops={route.stops}
-                  onStopPress={(sid) => router.push(`/route/${id}/stop/${sid}`)}
-                />
-              </View>
+              <>
+                <View style={styles.mapWrap}>
+                  <RouteMap
+                    stops={route.stops}
+                    onStopPress={(sid) => {
+                      if (!route.approved_at) {
+                        router.push(`/route/${id}/review`);
+                      } else {
+                        router.push(`/route/${id}/stop/${sid}`);
+                      }
+                    }}
+                  />
+                </View>
+                {!route.approved_at ? (
+                  <TouchableOpacity
+                    style={styles.approvalBanner}
+                    onPress={() => router.push(`/route/${id}/review`)}
+                    testID="approval-banner-review"
+                  >
+                    <View style={styles.approvalIconBox}>
+                      <Ionicons name="alert" size={22} color="#fff" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.approvalTitle}>TRASA WYMAGA ZATWIERDZENIA</Text>
+                      <Text style={styles.approvalSub}>Sprawdź pinezki na mapie i zatwierdź, by rozpocząć dostawy</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={22} color="#fff" />
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity
+                    style={styles.approvedBanner}
+                    onPress={() => router.push(`/route/${id}/review`)}
+                    testID="approval-banner-approved"
+                  >
+                    <Ionicons name="checkmark-circle" size={20} color="#00B14F" />
+                    <Text style={styles.approvedText}>Trasa zatwierdzona</Text>
+                    <Text style={styles.approvedEdit}>EDYTUJ</Text>
+                  </TouchableOpacity>
+                )}
+              </>
             ) : null
           }
           refreshControl={
@@ -100,7 +134,16 @@ export default function RouteScreen() {
             />
           }
           renderItem={({ item }) => (
-            <StopRow stop={item} onPress={() => router.push(`/route/${id}/stop/${item.id}`)} />
+            <StopRow
+              stop={item}
+              onPress={() => {
+                if (!route?.approved_at) {
+                  router.push(`/route/${id}/review`);
+                } else {
+                  router.push(`/route/${id}/stop/${item.id}`);
+                }
+              }}
+            />
           )}
           ListEmptyComponent={
             <View style={styles.center}>
@@ -173,6 +216,24 @@ const styles = StyleSheet.create({
   emptyText: { color: colors.textSecondary },
   listContent: { padding: 16, paddingBottom: 32 },
   mapWrap: { marginBottom: 16 },
+  approvalBanner: {
+    flexDirection: "row", alignItems: "center", gap: 12,
+    backgroundColor: colors.primary, borderRadius: 14, padding: 14, marginBottom: 16,
+    boxShadow: "0px 4px 10px rgba(230,51,41,0.25)", elevation: 3,
+  },
+  approvalIconBox: {
+    width: 36, height: 36, borderRadius: 18, backgroundColor: "rgba(255,255,255,0.22)",
+    alignItems: "center", justifyContent: "center",
+  },
+  approvalTitle: { color: "#fff", fontWeight: "900", fontSize: 13, letterSpacing: 0.8 },
+  approvalSub: { color: "rgba(255,255,255,0.92)", fontSize: 12, marginTop: 2, lineHeight: 16 },
+  approvedBanner: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    backgroundColor: "#E8F5E9", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10,
+    marginBottom: 16, borderWidth: 1, borderColor: "#A5D6A7",
+  },
+  approvedText: { color: "#1B5E20", fontWeight: "900", fontSize: 12, letterSpacing: 0.5, flex: 1 },
+  approvedEdit: { color: "#1B5E20", fontWeight: "900", fontSize: 11, letterSpacing: 0.8 },
   stopCard: {
     flexDirection: "row",
     alignItems: "center",

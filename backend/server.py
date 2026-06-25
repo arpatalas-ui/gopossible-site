@@ -65,6 +65,7 @@ class Route(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     name: str
     created_at: str = Field(default_factory=utc_now_iso)
+    approved_at: Optional[str] = None
     stops: List[Stop] = []
 
 
@@ -80,6 +81,10 @@ class StopDeliverRequest(BaseModel):
 
 class StopAbsentRequest(BaseModel):
     note: Optional[str] = None
+
+
+class StopAddressUpdateRequest(BaseModel):
+    address: str
 
 
 PARSING_SYSTEM_PROMPT = """Jesteś parserem polskich manifestów kurierskich (m.in. format 4BIS / Spoke).
@@ -928,6 +933,71 @@ async def delete_route(route_id: str):
     if res.deleted_count == 0:
         raise HTTPException(status_code=404)
     return {"ok": True}
+
+
+@api_router.post("/routes/{route_id}/approve")
+async def approve_route(route_id: str):
+    """Marks a route as approved by the courier (after reviewing pins on map).
+
+    Idempotent — re-approval just refreshes the timestamp. Returns the updated
+    approved_at so the client can render confirmation UI immediately.
+    """
+    ts = utc_now_iso()
+    res = await db.routes.update_one(
+        {"id": route_id},
+        {"$set": {"approved_at": ts}},
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Trasa nie znaleziona")
+    return {"ok": True, "approved_at": ts}
+
+
+@api_router.post("/routes/{route_id}/unapprove")
+async def unapprove_route(route_id: str):
+    """Reverts approval — used when courier wants to edit pins again before starting."""
+    res = await db.routes.update_one(
+        {"id": route_id},
+        {"$set": {"approved_at": None}},
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Trasa nie znaleziona")
+    return {"ok": True}
+
+
+@api_router.post("/routes/{route_id}/stops/{stop_id}/address")
+async def update_stop_address(route_id: str, stop_id: str, req: StopAddressUpdateRequest):
+    """Replace the recipient address for a single stop and re-geocode it.
+
+    Used by the review screen when the courier spots an address pinned in the
+    wrong city (e.g. mangled XLS encoding mapped the street to a different town).
+    """
+    new_addr = (req.address or "").strip()
+    if not new_addr:
+        raise HTTPException(status_code=400, detail="Adres nie może być pusty")
+
+    # Geocode the corrected address. If it fails we still save the address but
+    # leave lat/lng so the user knows it still needs review.
+    coords = await geocode_one(new_addr)
+    new_lat, new_lng = (coords if coords else (None, None))
+
+    res = await db.routes.update_one(
+        {"id": route_id, "stops.id": stop_id},
+        {"$set": {
+            "stops.$.address": new_addr,
+            "stops.$.lat": new_lat,
+            "stops.$.lng": new_lng,
+        }},
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Stop nie znaleziony")
+
+    return {
+        "ok": True,
+        "address": new_addr,
+        "lat": new_lat,
+        "lng": new_lng,
+        "geocoded": coords is not None,
+    }
 
 
 @api_router.post("/routes/{route_id}/regeocode")

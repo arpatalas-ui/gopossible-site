@@ -9,9 +9,12 @@ type Props = {
   stops: Stop[];
   onStopPress?: (stopId: string) => void;
   height?: number;
+  /** Stop IDs flagged as outliers (geocoded far from the cluster). Will be drawn yellow with a ring. */
+  outlierIds?: string[];
 };
 
-function buildHtml(stops: Stop[]): string {
+function buildHtml(stops: Stop[], outlierIds: string[] = []): string {
+  const outlierSet = new Set(outlierIds);
   const pts = stops
     .filter((s) => typeof s.lat === "number" && typeof s.lng === "number")
     .map((s) => ({
@@ -23,6 +26,7 @@ function buildHtml(stops: Stop[]): string {
       address: s.address,
       recipient: s.recipient_name,
       cod: !!s.is_cod || (s.cod_amount || 0) > 0,
+      outlier: outlierSet.has(s.id),
     }));
 
   const data = JSON.stringify(pts);
@@ -51,12 +55,14 @@ function buildHtml(stops: Stop[]): string {
 
   var markers = [];
   stops.forEach(function(s){
-    var color = s.status === 'delivered' ? '#00B14F'
+    var color = s.outlier ? '#FFB300'
+              : s.status === 'delivered' ? '#00B14F'
               : s.status === 'absent' ? '#1F1F1F'
               : s.cod ? '#FFB300' : '#E63329';
+    var ring = s.outlier ? '4px solid #B00020' : '2px solid #fff';
     var icon = L.divIcon({
       className: '',
-      html: '<div class="pin-wrap" style="background:' + color + '">' + s.order + '</div>',
+      html: '<div class="pin-wrap" style="background:' + color + ';border:' + ring + '">' + s.order + '</div>',
       iconSize: [34,34],
       iconAnchor: [17,17]
     });
@@ -87,9 +93,9 @@ function buildHtml(stops: Stop[]): string {
 </body></html>`;
 }
 
-export function RouteMap({ stops, onStopPress, height = 260 }: Props) {
+export function RouteMap({ stops, onStopPress, height = 260, outlierIds }: Props) {
   const hasCoords = stops.some((s) => typeof s.lat === "number" && typeof s.lng === "number");
-  const html = useMemo(() => buildHtml(stops), [stops]);
+  const html = useMemo(() => buildHtml(stops, outlierIds), [stops, outlierIds]);
 
   if (!hasCoords) {
     return (

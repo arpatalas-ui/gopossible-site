@@ -50,6 +50,7 @@ export type Route = {
   id: string;
   name: string;
   created_at: string;
+  approved_at?: string | null;
   stops: Stop[];
 };
 
@@ -82,5 +83,14 @@ export const api = {
   fetchTransfer: (code: string) =>
     request<{ route: Route; transfer: { code: string; expires_at: string; source: string } }>(
       `/transfer/${encodeURIComponent(code.toUpperCase())}`,
+    ),
+  approveRoute: (routeId: string) =>
+    request<{ ok: boolean; approved_at: string }>(`/routes/${routeId}/approve`, { method: "POST" }),
+  unapproveRoute: (routeId: string) =>
+    request<{ ok: boolean }>(`/routes/${routeId}/unapprove`, { method: "POST" }),
+  updateStopAddress: (routeId: string, stopId: string, address: string) =>
+    request<{ ok: boolean; address: string; lat: number | null; lng: number | null; geocoded: boolean }>(
+      `/routes/${routeId}/stops/${stopId}/address`,
+      { method: "POST", body: JSON.stringify({ address }) },
     ),
 };

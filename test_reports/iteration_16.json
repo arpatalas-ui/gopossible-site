@@ -1,0 +1,41 @@
+{
+  "summary": "Iteration 16 — backend-only verification of the new gopossible.pl integration + route approval + per-stop address correction. 20/20 pytest cases PASSED in 12.7s. Coverage: (1) POST /api/transfer/create — missing X-Api-Key→401, wrong key→401, oversize-but-junk bytes→400, tiny payload→400, valid XLS + correct key→200 with {transfer_code (6 alnum), qr_payload 'gopossible:transfer:<code>', route_id, stops≥100, expires_at}. (2) GET /api/transfer/{code} — unknown→404, valid→200 returning {route, transfer} with all 132 stops, claimed_at populated on first fetch, lower-case code accepted. (3) GET /api/transfer/{code}/status — no auth required, unknown→404, valid→200 with route_id/claimed_at/expires_at. (4) POST /api/routes/{id}/approve — unknown id→404, sets approved_at (verified via GET /api/routes/{id}), second call refreshes timestamp (idempotent). (5) POST /api/routes/{id}/unapprove — clears approved_at to null, unknown→404. (6) POST /api/routes/{id}/stops/{sid}/address — empty body→400, unknown stop_id→404, real Szczecin address ('Wojska Polskiego 64, Szczecin') → 200 geocoded=true with lat/lng inside 35 km of (53.4285, 14.5528) and persisted to DB; gibberish address ('qzx zzz qqq xyzxyz 9999, Atlantydaaa') → 200 geocoded=false with lat/lng=null. (7) Szczecin geocoding bias — both reference routes verified directly: route 8c0a5cbe 162/167 geocoded with 0 outliers >35 km; route 1145d1f9 163/167 geocoded with 0 outliers >35 km. The city-prior + viewbox + 35 km accept-radius in geocode_one is functioning exactly as specified.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration16_transfer_approve_address.py",
+    "/app/test_reports/pytest/iteration_16.xml"
+  ],
+  "action_items": [
+    "Nothing blocking. Optional: server.py is now ~1098 lines (well over the 700-line guideline flagged in iteration 15) — strongly recommend splitting into modules (transfer.py, geocode.py, manifest_parser.py, models.py) before the next feature lands."
+  ],
+  "critical_code_review_comments": [
+    "_require_api_key correctly returns 500 (not 401) when GOPOSSIBLE_API_KEY is missing from the env — this fail-fast is good; both 'no header' and 'wrong header' map to 401, matching the spec.",
+    "transfer/{code} marks claimed_at only on first fetch (idempotent on re-scan) and still returns the route — this is the right UX for couriers closing/reopening the app.",
+    "transfer/{code} expiry handling: parses ISO with naive→UTC promotion and 410 on expiry — clean. expires_at is computed via timedelta(hours=24) which matches TRANSFER_EXPIRY_HOURS.",
+    "approve/unapprove use update_one with id-only filter and check matched_count for 404 — correct (no false 404 if approved_at already had the requested value).",
+    "update_stop_address re-geocodes synchronously and stores lat=None/lng=None on failure rather than leaving the OLD coords, which is the correct behaviour (stale pin on a new address would be worse than no pin).",
+    "geocode_one has two local `_accept` closures (lines 282 and 321) — duplicate definition; the second overwrites the first. Harmless because they're identical, but a future edit could create a subtle bug. Suggest deduping when server.py is split.",
+    "Minor: transfer_create does NOT validate that the manifest actually parsed a non-empty stop list before generating the transfer code — but parse_xls_manifest already raises 400 on empty results, so this is fine in practice."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration16_transfer_approve_address.py (new — 20 test cases)"
+  ],
+  "success_rate": {
+    "backend": "100% (20/20)",
+    "frontend": "not tested (backend-only request)"
+  },
+  "seed_data_creation": "One TEST_iter16_transfer route + transfer code is created during the module fixture and DELETE-cleaned in fixture teardown. No persistent test data.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "All new backend endpoints (transfer create/fetch/status, approve/unapprove, stop address re-geocode) are live and behaving exactly per the spec in /app/docs/gopossible-integration.md. Szczecin geocoding bias is verified on two real 167-stop routes — 0 pins beyond 35 km of the city centre on either route. LocationIQ key is in env and being used (paid tier, viewbox priority works). The test file at /app/backend/tests/test_iteration16_transfer_approve_address.py is the regression suite for the next iteration — runs in ~13s end-to-end including a full XLS upload via gopossible auth.",
+  "rca_of_issue": "N/A — feature verification only, no bugs found."
+}

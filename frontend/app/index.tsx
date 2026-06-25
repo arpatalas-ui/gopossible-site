@@ -89,7 +89,7 @@ export default function HomeScreen() {
 
       const route = await api.uploadManifest(base64, asset.name?.replace(/\.(pdf|xlsx?)$/i, ""));
       await load();
-      router.push(`/route/${route.id}`);
+      router.push(`/route/${route.id}/review`);
     } catch (e: any) {
       setError(e?.message || "Nie udało się wgrać manifestu");
     } finally {
