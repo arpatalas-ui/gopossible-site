@@ -16,6 +16,7 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { api, Stop } from "@/src/api";
 import { colors } from "@/src/theme";
+import { nextStopPathOrRoute } from "@/src/utils/routeFlow";
 
 type Step = "photo-capture" | "photo-review" | "signature" | "saving";
 
@@ -75,7 +76,8 @@ export default function DeliverScreen() {
         photo_base64: photo || undefined,
         signature_base64: sig,
       });
-      router.replace(`/route/${id}`);
+      const nextPath = await nextStopPathOrRoute(id, stopId);
+      router.replace(nextPath as Parameters<typeof router.replace>[0]);
     } catch (e: any) {
       setError(e?.message || "Nie udało się zapisać dostawy");
       setStep("signature");

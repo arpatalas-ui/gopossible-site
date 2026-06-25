@@ -14,6 +14,7 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { api, Stop } from "@/src/api";
 import { colors } from "@/src/theme";
+import { nextStopPathOrRoute } from "@/src/utils/routeFlow";
 
 const SMS_BODY =
   "Dzień dobry, jestem kurierem z paczką dla Pani/Pana. Nie zastałem nikogo pod adresem. Proszę o kontakt aby umówić ponowną dostawę.";
@@ -57,7 +58,8 @@ export default function AbsentScreen() {
       if (phone) {
         await Linking.openURL(url).catch(() => {});
       }
-      router.replace(`/route/${id}`);
+      const nextPath = await nextStopPathOrRoute(id, stopId);
+      router.replace(nextPath as Parameters<typeof router.replace>[0]);
     } catch (e: any) {
       setError(e?.message || "Nie udało się zapisać statusu");
     } finally {
@@ -70,7 +72,8 @@ export default function AbsentScreen() {
     setSaving(true);
     try {
       await api.absentStop(id, stopId, { note: "Brak odbiorcy pod adresem" });
-      router.replace(`/route/${id}`);
+      const nextPath = await nextStopPathOrRoute(id, stopId);
+      router.replace(nextPath as Parameters<typeof router.replace>[0]);
     } catch (e: any) {
       setError(e?.message || "Nie udało się zapisać statusu");
     } finally {
