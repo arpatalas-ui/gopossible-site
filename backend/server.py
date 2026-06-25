@@ -26,6 +26,7 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY')
+LOCATIONIQ_KEY = os.environ.get('LOCATIONIQ_KEY')
 
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
@@ -127,10 +128,35 @@ FORMAT WYJŚCIA:
 """
 
 
-# ---------- Geocoding (Photon by Komoot, with Nominatim fallback) ----------
-PHOTON_URL = "https://photon.komoot.io/api/"
+# ---------- Geocoding (LocationIQ primary, Nominatim fallback) ----------
+LOCATIONIQ_URL = "https://us1.locationiq.com/v1/search"
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
 GEO_UA = "KurierNawigacja/1.0 (courier app)"
+
+
+def _locationiq_sync(addr: str) -> Optional[Tuple[float, float]]:
+    if not addr or not LOCATIONIQ_KEY:
+        return None
+    try:
+        r = http_lib.get(
+            LOCATIONIQ_URL,
+            params={
+                "key": LOCATIONIQ_KEY,
+                "q": addr,
+                "format": "json",
+                "limit": 1,
+                "countrycodes": "pl",
+            },
+            headers={"Accept-Language": "pl"},
+            timeout=10,
+        )
+        if r.status_code == 200:
+            data = r.json()
+            if data:
+                return float(data[0]["lat"]), float(data[0]["lon"])
+    except Exception:
+        pass
+    return None
 
 
 def _geocode_sync(addr: str) -> Optional[Tuple[float, float]]:
@@ -154,7 +180,24 @@ def _geocode_sync(addr: str) -> Optional[Tuple[float, float]]:
     return None
 
 
-# Serialise Nominatim calls and enforce the 1 req/s policy across all background work.
+# LocationIQ free tier allows ~2 req/s; serialise with a 0.55 s gap to be safe.
+_LIQ_LOCK = asyncio.Lock()
+_LAST_LIQ_CALL = 0.0
+
+
+async def _locationiq_paced(query: str) -> Optional[Tuple[float, float]]:
+    global _LAST_LIQ_CALL
+    async with _LIQ_LOCK:
+        now = time.monotonic()
+        wait = 0.55 - (now - _LAST_LIQ_CALL)
+        if wait > 0:
+            await asyncio.sleep(wait)
+        result = await asyncio.to_thread(_locationiq_sync, query)
+        _LAST_LIQ_CALL = time.monotonic()
+    return result
+
+
+# Nominatim (fallback): max 1 req/s.
 _NOMINATIM_LOCK = asyncio.Lock()
 _LAST_NOMINATIM_CALL = 0.0
 
@@ -172,25 +215,50 @@ async def _nominatim_paced(query: str) -> Optional[Tuple[float, float]]:
 
 
 async def geocode_one(addr: str) -> Optional[Tuple[float, float]]:
-    """Cache-aware single address geocode (used by callers individually)."""
+    """Cache-aware geocoder. LocationIQ first (fast, paid-ish), then Nominatim fallback."""
     if not addr:
         return None
     cached = await _cache_lookup(addr)
     if cached:
         return cached
-    queries = [addr + ", Polska", addr]
-    if "," in addr:
-        parts = [p.strip() for p in addr.split(",") if p.strip()]
+    norm = _normalize_address(addr)
+    relaxed = _street_only(addr)
+    queries = []
+    for base in (norm, addr):
+        for tail in (", Polska", ""):
+            q = (base + tail).strip(" ,")
+            if q and q not in queries:
+                queries.append(q)
+    # Relaxed query (no apartment / extra tokens)
+    if relaxed and relaxed not in queries:
+        queries.append(relaxed + ", Polska")
+        queries.append(relaxed)
+    # Last 2 comma segments fallback (city + street only)
+    if "," in norm:
+        parts = [p.strip() for p in norm.split(",") if p.strip()]
         if len(parts) >= 2:
-            queries.append(", ".join(parts[-2:]) + ", Polska")
-    stripped = _strip_pl(addr)
-    if stripped != addr:
+            tail = ", ".join(parts[-2:]) + ", Polska"
+            if tail not in queries:
+                queries.append(tail)
+    # Accent-stripped fallback
+    stripped = _strip_pl(norm)
+    if stripped and stripped != norm:
         queries.append(stripped + ", Polska")
-        if "," in stripped:
-            sparts = [p.strip() for p in stripped.split(",") if p.strip()]
-            if len(sparts) >= 2:
-                queries.append(", ".join(sparts[-2:]) + ", Polska")
+
     seen: set = set()
+    # Try LocationIQ for each query first (preferred when key present)
+    if LOCATIONIQ_KEY:
+        for q in queries:
+            if q in seen:
+                continue
+            seen.add(q)
+            coords = await _locationiq_paced(q)
+            if coords:
+                await _cache_store(addr, *coords)
+                return coords
+
+    # Nominatim fallback
+    seen.clear()
     for q in queries:
         if q in seen:
             continue
@@ -289,6 +357,52 @@ _PL_TABLE = str.maketrans(
 
 def _strip_pl(s: str) -> str:
     return (s or "").translate(_PL_TABLE)
+
+
+# Common Polish address typos / casing fixes seen in XLS reports.
+_CITY_FIXES = {
+    "szćzećin": "Szczecin",
+    "szćzecin": "Szczecin",
+    "szczećin": "Szczecin",
+    "szczecin ": "Szczecin",
+}
+
+
+def _normalize_address(addr: str) -> str:
+    """Clean up common XLS quirks before geocoding.
+
+    - Fix mangled city names ("Szćzećin" → "Szczecin").
+    - Insert missing space between street name and house number ("Montwiłła11/3" → "Montwiłła 11/3").
+    - Drop trailing slashes and lone numbers ("Szarotki 23 23/u06" → "Szarotki 23").
+    - Lower-case "kod:" suffix segments (postcode hints) are kept as-is.
+    """
+    if not addr:
+        return addr
+    s = addr.strip()
+    # City typos (case-insensitive)
+    for bad, good in _CITY_FIXES.items():
+        s = re.sub(re.escape(bad), good, s, flags=re.IGNORECASE)
+    # Insert space between letter and digit (street name → number glued together)
+    s = re.sub(r"([A-Za-zĄĆĘŁŃÓŚŹŻąćęłńóśźż])(\d)", r"\1 \2", s)
+    # Collapse trailing "27/" or "11/" with no apartment
+    s = re.sub(r"(\d+)\s*/\s*(?=$|,)", r"\1", s)
+    # Collapse repeated number tokens like "Szarotki 23 23/u06" → "Szarotki 23"
+    s = re.sub(r"(\b\d+[A-Za-z]?\b)\s+\1\b[\w/]*", r"\1", s)
+    # Collapse whitespace
+    s = re.sub(r"\s+", " ", s).strip(" ,;-")
+    return s
+
+
+def _street_only(addr: str) -> str:
+    """Return street + city without apartment / flat suffix for a relaxed geocode pass."""
+    if not addr:
+        return addr
+    s = _normalize_address(addr)
+    # Drop everything after a "/" within a number token: "11/3" → "11"
+    s = re.sub(r"(\d+[A-Za-z]?)\s*/\s*[\w-]+", r"\1", s)
+    # Drop trailing extra tokens like "lok43", "VIp", "MARGRAF"
+    s = re.sub(r"\b(lok|lok\.|m\.|mieszk\.?|bud\.?|kod:?).*$", "", s, flags=re.IGNORECASE)
+    return re.sub(r"\s+", " ", s).strip(" ,;-")
 
 
 def _split_recipient_address(text: str) -> Tuple[str, str]:

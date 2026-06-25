@@ -300,7 +300,7 @@ export default function NavigateScreen() {
 
         {/* Compass bar (turn-by-turn) — overlays top of map when navigating */}
         {compass && (
-          <SafeAreaView style={styles.compassWrap} edges={["top"]} pointerEvents="box-none" testID="compass-bar">
+          <SafeAreaView style={[styles.compassWrap, { pointerEvents: "box-none" }]} edges={["top"]} testID="compass-bar">
             <View style={styles.compassRow}>
               <View style={styles.compassIcon}>
                 <Ionicons name={compass.hint.icon} size={36} color="#fff" />
@@ -317,9 +317,8 @@ export default function NavigateScreen() {
 
         {/* Top bar overlay */}
         <SafeAreaView
-          style={[styles.topBar, compass && styles.topBarShifted]}
+          style={[styles.topBar, compass && styles.topBarShifted, { pointerEvents: "box-none" }]}
           edges={compass ? [] : ["top"]}
-          pointerEvents="box-none"
         >
           <View style={styles.topBarRow}>
             <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn} testID="back-btn">
@@ -506,8 +505,7 @@ const styles = StyleSheet.create({
     flexDirection: "row", alignItems: "center",
     marginHorizontal: 12, marginTop: 12, padding: 12,
     backgroundColor: colors.primary, borderRadius: 14,
-    shadowColor: "#000", shadowOpacity: 0.25, shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 }, elevation: 6,
+    boxShadow: "0px 4px 10px rgba(0,0,0,0.25)", elevation: 6,
   },
   compassIcon: {
     width: 52, height: 52, borderRadius: 26,
@@ -526,10 +524,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     paddingHorizontal: 6,
     paddingVertical: 6,
-    shadowColor: "#000",
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
+    boxShadow: "0px 4px 8px rgba(0,0,0,0.15)",
     elevation: 4,
   },
   iconBtn: {
@@ -553,8 +548,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 16, borderTopRightRadius: 16,
     paddingTop: 12, paddingHorizontal: 16, paddingBottom: 16,
     maxHeight: 360,
-    shadowColor: "#000", shadowOpacity: 0.08, shadowRadius: 12,
-    shadowOffset: { width: 0, height: -4 }, elevation: 6,
+    boxShadow: "0px -4px 12px rgba(0,0,0,0.08)", elevation: 6,
   },
   targetCard: {
     flexDirection: "row", alignItems: "center", paddingBottom: 12,
