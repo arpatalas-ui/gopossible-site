@@ -124,9 +124,9 @@ export default function StopScreen() {
           )}
         </View>
 
-        {(stop.cod_amount > 0 || stop.is_cod) && (
+        {(stop.cod_amount > 0 || (stop.extra_fees || 0) > 0 || stop.is_cod) && (
           <View style={{ marginTop: 16 }}>
-            <CodBadge amount={stop.cod_amount} isCod={stop.is_cod} large />
+            <CodBadge amount={stop.cod_amount} fees={stop.extra_fees} isCod={stop.is_cod} large />
           </View>
         )}
 

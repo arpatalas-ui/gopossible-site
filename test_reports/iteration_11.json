@@ -1,0 +1,46 @@
+{
+  "summary": "Iteration 11 — XLS / XLSX 'KSIĘGA ODDAWCZA' manifest parser. Backend: 13/13 pytest cases passing (/app/backend/tests/test_xls_manifest.py). Real user XLS (132 deliveries) downloaded, base64-uploaded to POST /api/manifest/upload, all 132 stops parsed (expectation >=100). Phone extraction: 124/132 stops have phone in '+48 XXX XXX XXX' format. COD stops: 15. Geocoding via Photon: 125/132 = 95%. Spot-check stop order=2 = 'Andrzej Walczak', phone='+48 507 529 070', cod=186.0, fees=0.0, is_cod=True. Spot-check stop order=3 = 'Mirosław Malinowski', cod=77.98. Schema includes new extra_fees: float field on every stop. is_cod is consistent with cod_amount>0. No phone digits / 'tel.' markers leak into recipient_name or address (verified across all 132 stops). Invalid format (junk bytes) and tiny payloads correctly rejected with 400. PDF format dispatch path is intact (route inspects magic bytes %PDF and forwards to Gemini); not re-tested live to save AI cost — previous iterations validated this flow. Frontend (Expo web preview, 390x844): CodBadge in stop detail screen with extra_fees=12.50 (DB-injected) renders 'POBRANIE / 198.50 PLN / 186.00 + 12.50 opłaty' breakdown line; with extra_fees=0 renders only 'POBRANIE / 186.00 PLN' (no breakdown line). Phone shown under TELEFON label. Address rendered without phone leak. Home upload button label now reads 'WGRAJ MANIFEST PDF / XLS' as required.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "stop detail — address rendering from XLS",
+        "issues": [
+          "Source XLS sometimes contains Polish characters mangled in the ADRESAT cell (e.g. 'Szczecin' arrives as 'Szćzećin' in stop 2). This is a data quality artefact from the customer file, not a code bug — pandas reads the cell verbatim. Optional: add a light post-processor that normalises known city-name corruptions. Low priority.",
+          "Street numbers sometimes glued to street name without space (e.g. 'Szarotki7/10'). Same cause; optional regex cleanup."
+        ]
+      }
+    ],
+    "react_native_issues": [
+      {"component": "shadow* style props", "issue": "Pre-existing RN-web warning: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' from uploadBtn in /app/frontend/app/index.tsx:232-236. Carried over from iteration 10, not introduced by iter 11. Migrate to boxShadow to silence."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_xls_manifest.py",
+    "/app/test_reports/pytest/iteration_11.xml"
+  ],
+  "action_items": [
+    "OPTIONAL: post-process recipient/address strings to repair common Polish-character corruptions (e.g. 'Szćzećin' → 'Szczecin') and insert a space between street name and number when glued.",
+    "OPTIONAL: migrate shadow* props to boxShadow on uploadBtn (carry-over from iter 10).",
+    "Public ingress (preview URL) times out at ~60s for the 132-stop upload + geocoding pass; tests fall back to localhost:8001 automatically. Consider speeding up geocoding (e.g. higher concurrency or batched local cache) so real users on the public URL don't hit 502 when uploading >100 stops."
+  ],
+  "critical_code_review_comments": [
+    "parse_xls_manifest() locates header by scanning for 'Numer nadawczy' + 'ADRESAT' — robust against minor row shifts.",
+    "_parse_phone() extracts phone first, then strips orphan 'tel.'/'nr' tokens — produced clean recipient/address strings on 100% of 132 stops in the real file.",
+    "_zlgr_to_float() handles złote+grosze split columns safely (nan / empty / int / float / str).",
+    "is_cod = ('pobr' in notes) OR cod>0 — covers both flagged and amount-only cases.",
+    "Magic-byte dispatch (\\xd0\\xcf\\x11\\xe0 / PK\\x03\\x04 / %PDF) is concise and correct; non-matching bytes return 400 as expected.",
+    "Stop model now includes extra_fees: float = 0.0 — backward compatible for older PDF-parsed routes (default 0)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_xls_manifest.py (new)"
+  ],
+  "success_rate": {"backend": "100% (13/13 pytest)", "frontend": "100% (badge with-fees, badge without-fees, home button label all verified)"},
+  "seed_data_creation": "Uploaded the user's KSIĘGA ODDAWCZA XLS as route 'TEST_KOP_UI' and 'TEST_KOP_iter11'; both deleted at end of run. One transient DB tweak (set extra_fees=12.50 on Andrzej Walczak stop) was reset to 0.0 immediately after the UI assertion, then the whole route deleted.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "The customer XLS has 132 rows, 15 with COD, 124 with phone, 0 with extra_fees>0. To exercise the 'cod + fees opłaty' breakdown path you must either (a) inject extra_fees via a DB update or (b) find a different KOP file that contains 'Opłaty doręczeń i inne' values (cols 28-29 in the .xls). The upload+geocode round-trip takes ~45-60s and may 502 on the public ingress; pytest falls back to localhost:8001.",
+  "rca_of_issue": "n/a — XLS parser fully validated against the real customer file. All review-request acceptance criteria met."
+}

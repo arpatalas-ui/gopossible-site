@@ -134,9 +134,9 @@ function StopRow({ stop, onPress }: { stop: Stop; onPress: () => void }) {
         </Text>
         <View style={styles.badgeRow}>
           <StatusBadge status={stop.status} />
-          {(stop.cod_amount > 0 || stop.is_cod) ? (
+          {(stop.cod_amount > 0 || (stop.extra_fees || 0) > 0 || stop.is_cod) ? (
             <View style={{ marginLeft: 8 }}>
-              <CodBadge amount={stop.cod_amount} isCod={stop.is_cod} />
+              <CodBadge amount={stop.cod_amount} fees={stop.extra_fees} isCod={stop.is_cod} />
             </View>
           ) : null}
         </View>

@@ -35,6 +35,7 @@ export type Stop = {
   phone: string;
   package_numbers: string[];
   cod_amount: number;
+  extra_fees?: number;
   is_cod?: boolean;
   lat?: number | null;
   lng?: number | null;

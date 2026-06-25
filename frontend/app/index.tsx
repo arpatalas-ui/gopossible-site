@@ -64,7 +64,7 @@ export default function HomeScreen() {
   const onUpload = async () => {
     try {
       const res = await DocumentPicker.getDocumentAsync({
-        type: "application/pdf",
+        type: ["application/pdf", "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
         copyToCacheDirectory: true,
         multiple: false,
       });
@@ -75,14 +75,11 @@ export default function HomeScreen() {
 
       let base64: string;
       if (Platform.OS === "web") {
-        // On web, DocumentPicker returns a `file` (Blob/File) or a blob URL we can fetch.
-        // Prefer the File when available, otherwise fetch the uri.
         // @ts-expect-error - "file" is provided by expo-document-picker on web only
         const webFile: Blob | undefined = asset.file;
         const blob = webFile || (await (await fetch(asset.uri)).blob());
         base64 = await blobToBase64(blob);
       } else {
-        // Native: lazy-require expo-file-system so web bundle stays clean.
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         const FileSystem = require("expo-file-system/legacy");
         base64 = await FileSystem.readAsStringAsync(asset.uri, {
@@ -90,7 +87,7 @@ export default function HomeScreen() {
         });
       }
 
-      const route = await api.uploadManifest(base64, asset.name?.replace(/\.pdf$/i, ""));
+      const route = await api.uploadManifest(base64, asset.name?.replace(/\.(pdf|xlsx?)$/i, ""));
       await load();
       router.push(`/route/${route.id}`);
     } catch (e: any) {
@@ -139,7 +136,7 @@ export default function HomeScreen() {
           ) : (
             <>
               <Ionicons name="cloud-upload" size={22} color="#fff" />
-              <Text style={styles.uploadBtnText}>  WGRAJ MANIFEST PDF</Text>
+              <Text style={styles.uploadBtnText}>  WGRAJ MANIFEST PDF / XLS</Text>
             </>
           )}
         </TouchableOpacity>
