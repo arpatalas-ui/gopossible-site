@@ -213,11 +213,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: colors.text,
-    height: 64,
-    borderRadius: 999,
+    height: 56,
+    borderRadius: 12,
     marginTop: 24,
   },
-  navBtnText: { color: "#fff", fontSize: 18, fontWeight: "800" },
+  navBtnText: { color: "#fff", fontSize: 15, fontWeight: "900", letterSpacing: 0.8 },
   resetBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -237,8 +237,8 @@ const styles = StyleSheet.create({
   },
   actionBtn: {
     flex: 1,
-    height: 64,
-    borderRadius: 999,
+    height: 56,
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
     flexDirection: "row",
@@ -246,5 +246,5 @@ const styles = StyleSheet.create({
   },
   deliveredBtn: { backgroundColor: colors.success },
   absentBtn: { backgroundColor: colors.absent },
-  actionText: { color: "#fff", fontSize: 17, fontWeight: "900" },
+  actionText: { color: "#fff", fontSize: 14, fontWeight: "900", letterSpacing: 0.8 },
 });

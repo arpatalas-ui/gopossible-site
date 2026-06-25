@@ -5,7 +5,7 @@ export const colors = {
   bg: "#F5F5F5",
   card: "#FFFFFF",
   text: "#0A0A0A",
-  textSecondary: "#4B5563",
+  textSecondary: "#6B7280",
   textInverse: "#FFFFFF",
   primary: "#E63329",
   primaryHover: "#B81E15",
@@ -13,16 +13,18 @@ export const colors = {
   error: "#D50000",
   warning: "#FFB300",
   cod: "#FFB300",
-  absent: "#1F1F1F",
+  absent: "#0A0A0A",
   border: "#E5E7EB",
   borderDark: "#D1D5DB",
+  accent: "#FFD600",
 };
 
 export const radius = {
-  sm: 8,
-  md: 12,
-  lg: 16,
-  pill: 999,
+  sm: 6,
+  md: 10,
+  lg: 14,
+  btn: 12,        // primary/secondary CTA radius (GoPossible style)
+  pill: 999,      // chips & status badges only
 };
 
 export const spacing = {

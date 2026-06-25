@@ -1,0 +1,35 @@
+{
+  "summary": "Iteration 10 — GoPossible visual rebranding (frontend only). Verified on mobile viewport 390x844 via Expo web preview. Home shows new // SYSTEM KURIERSKI label, red GO tile + KURIER. wordmark (KURIER in brand red #E63329, '.' in black), gray subtitle, and rectangular red WGRAJ MANIFEST PDF CTA (borderRadius=12, height=56, bg rgb(230,51,41), uppercase letter-spaced label). // MOJE TRASY section label renders above the FlatList. Route cards use 1px border and no shadow (border=1px, box-shadow=none, radius=12). Stop screen action buttons all rectangular and 56px tall: navigate-btn (radius=12, h=56, black bg), mark-delivered-btn (radius=12, h=56, green bg, label 'Dostarczono'), mark-absent-btn (radius=12, h=56, black bg, label 'Nieobecny'). Absent screen back-to-route-btn rectangular (radius=12, h=56). send-sms-btn could not be visually confirmed because none of the first 30 pending stops in the test data had a phone number, but the source styles primaryBtn with radius=12, h=56, primary bg — matches the spec. No React errors, no red screen, no console errors (only pre-existing 'shadow*' deprecation warnings unrelated to this iteration). All testIDs present.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "stop detail (route/[id]/stop/[stopId]/index.tsx)",
+        "issues": [
+          "Action button labels 'Dostarczono', 'Nieobecny', 'Nawiguj' are rendered in mixed-case while the GoPossible brand & the home upload CTA use ALL-CAPS letter-spaced labels. For full brand consistency consider adding textTransform: 'uppercase' to actionText / navBtnText styles (or changing the literal strings to 'DOSTARCZONO' / 'NIEOBECNY' / 'NAWIGUJ'). This is a polish item, not a blocker."
+        ]
+      }
+    ],
+    "react_native_issues": [
+      {"component": "shadow* style props", "issue": "Two console warnings: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' Pre-existing — comes from uploadBtn shadowColor/shadowOpacity/shadowRadius/shadowOffset in /app/frontend/app/index.tsx:235-239 (and possibly other screens). Migrate shadow* props to React Native Web `boxShadow` to silence the warnings. Not a blocker, app renders fine."}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "OPTIONAL polish: apply textTransform:'uppercase' (or literal uppercase strings) to the stop-screen action button labels (Dostarczono / Nieobecny / Nawiguj) so they match the GoPossible all-caps CTA convention used by WGRAJ MANIFEST PDF.",
+    "OPTIONAL: replace shadow* style props on uploadBtn with `boxShadow` (or wrap in Platform.OS === 'web' check) to remove RN-web deprecation warnings."
+  ],
+  "critical_code_review_comments": [
+    "SectionLabel/theme/index.tsx implementations match the spec; SectionLabel cleanly encapsulates '// LABEL' style.",
+    "uploadBtn still uses legacy shadow* props which trigger RN-web deprecation warnings; consider migrating to boxShadow."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (not in scope)", "frontend": "100% (all spec items verified except send-sms-btn which is data-conditional)"},
+  "seed_data_creation": "None. Used existing seeded routes (e.g. TEST_4BIS_Q1, route id 4fca5350-ddf4-40cb-8028-aae36f8d257d, pending stop 84f46d8e-d3d0-4d49-b579-1195be0418c1).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Pending stops with phone numbers are sparse in current seed data — to verify send-sms-btn visually, pick a manifest known to include phones or seed one. The stop list selector is `data-testid^=stop-row-` (not stop-card-).",
+  "rca_of_issue": "n/a — no defects found, visual rebranding implemented as specified."
+}

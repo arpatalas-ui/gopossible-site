@@ -18,6 +18,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { api, Route } from "@/src/api";
 import { colors } from "@/src/theme";
 import { CodBadge } from "@/src/components/CodBadge";
+import { SectionLabel } from "@/src/components/SectionLabel";
 
 function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -110,28 +111,39 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={styles.container} edges={["top", "left", "right"]} testID="home-screen">
       <View style={styles.header}>
-        <Text style={styles.h1}>Moje Trasy</Text>
-        <Text style={styles.subtitle}>Wgraj manifest PDF aby utworzyć nową trasę</Text>
+        <SectionLabel text="SYSTEM KURIERSKI" />
+        <View style={styles.brandRow}>
+          <View style={styles.brandTile}>
+            <Text style={styles.brandTileText}>GO</Text>
+          </View>
+          <Text style={styles.brandWordmark}>
+            <Text style={{ color: colors.primary }}>KURIER</Text>
+            <Text style={{ color: colors.text }}>.</Text>
+          </Text>
+        </View>
+        <Text style={styles.subtitle}>Wgraj manifest PDF — AI utworzy trasę i pokaże paczki na mapie.</Text>
       </View>
 
-      <TouchableOpacity
-        style={[styles.uploadBtn, uploading && styles.uploadBtnDisabled]}
-        onPress={onUpload}
-        disabled={uploading}
-        testID="upload-manifest-btn"
-      >
-        {uploading ? (
-          <>
-            <ActivityIndicator color="#fff" />
-            <Text style={styles.uploadBtnText}>  AI parsuje manifest…</Text>
-          </>
-        ) : (
-          <>
-            <Ionicons name="cloud-upload" size={26} color="#fff" />
-            <Text style={styles.uploadBtnText}>  Wgraj Manifest PDF</Text>
-          </>
-        )}
-      </TouchableOpacity>
+      <View style={styles.ctaRow}>
+        <TouchableOpacity
+          style={[styles.uploadBtn, uploading && styles.uploadBtnDisabled]}
+          onPress={onUpload}
+          disabled={uploading}
+          testID="upload-manifest-btn"
+        >
+          {uploading ? (
+            <>
+              <ActivityIndicator color="#fff" />
+              <Text style={styles.uploadBtnText}>  AI parsuje…</Text>
+            </>
+          ) : (
+            <>
+              <Ionicons name="cloud-upload" size={22} color="#fff" />
+              <Text style={styles.uploadBtnText}>  WGRAJ MANIFEST PDF</Text>
+            </>
+          )}
+        </TouchableOpacity>
+      </View>
 
       {error ? (
         <View style={styles.errorBox} testID="error-box">
@@ -157,6 +169,7 @@ export default function HomeScreen() {
           data={routes}
           keyExtractor={(r) => r.id}
           contentContainerStyle={styles.listContent}
+          ListHeaderComponent={<SectionLabel text="MOJE TRASY" style={styles.listHeader} />}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -199,26 +212,35 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  header: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 12 },
-  h1: { fontSize: 32, fontWeight: "900", color: colors.text, letterSpacing: -0.5 },
-  subtitle: { fontSize: 14, color: colors.textSecondary, marginTop: 4 },
+  header: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 4 },
+  brandRow: { flexDirection: "row", alignItems: "center", marginTop: 6, marginBottom: 2 },
+  brandTile: {
+    backgroundColor: colors.primary,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginRight: 10,
+  },
+  brandTileText: { color: "#fff", fontSize: 16, fontWeight: "900", letterSpacing: 1 },
+  brandWordmark: { fontSize: 36, fontWeight: "900", letterSpacing: -1, lineHeight: 40 },
+  subtitle: { fontSize: 14, color: colors.textSecondary, marginTop: 8, lineHeight: 20 },
+  ctaRow: { paddingHorizontal: 20, marginTop: 16, marginBottom: 8 },
   uploadBtn: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: colors.primary,
-    marginHorizontal: 20,
-    height: 64,
-    borderRadius: 999,
-    marginBottom: 16,
+    height: 56,
+    borderRadius: 12,
     shadowColor: colors.primary,
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
     shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
+    elevation: 3,
   },
   uploadBtnDisabled: { opacity: 0.7 },
-  uploadBtnText: { color: "#fff", fontSize: 18, fontWeight: "800" },
+  uploadBtnText: { color: "#fff", fontSize: 15, fontWeight: "900", letterSpacing: 0.8 },
+  listHeader: { paddingBottom: 12, paddingHorizontal: 4 },
   errorBox: {
     marginHorizontal: 20,
     marginBottom: 12,
@@ -239,14 +261,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: colors.card,
-    borderRadius: 16,
+    borderRadius: 12,
     padding: 16,
     marginBottom: 12,
-    shadowColor: "#000",
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 1,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   routeName: { fontSize: 18, fontWeight: "800", color: colors.text },
   routeMeta: { fontSize: 14, color: colors.textSecondary, marginTop: 4 },
