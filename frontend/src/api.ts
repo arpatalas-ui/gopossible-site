@@ -79,4 +79,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ pdf_base64, name }),
     }),
+  fetchTransfer: (code: string) =>
+    request<{ route: Route; transfer: { code: string; expires_at: string; source: string } }>(
+      `/transfer/${encodeURIComponent(code.toUpperCase())}`,
+    ),
 };

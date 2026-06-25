@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException
+from fastapi import FastAPI, APIRouter, HTTPException, Header
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -27,6 +27,7 @@ load_dotenv(ROOT_DIR / '.env')
 
 EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY')
 LOCATIONIQ_KEY = os.environ.get('LOCATIONIQ_KEY')
+GOPOSSIBLE_API_KEY = os.environ.get('GOPOSSIBLE_API_KEY')
 
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
@@ -647,16 +648,13 @@ def _extract_json(raw: str) -> dict:
     raise ValueError("Nie udało się zdekodować odpowiedzi JSON od AI")
 
 
-# ---------- Routes ----------
-@api_router.get("/")
-async def root():
-    return {"message": "Courier API ok"}
+async def _parse_manifest_to_route(file_b64: str, name: Optional[str]) -> Route:
+    """Decode + parse a manifest file (PDF/XLS/XLSX) into a Route object.
 
-
-@api_router.post("/manifest/upload")
-async def upload_manifest(req: ManifestUploadRequest):
+    Raises HTTPException on validation/parse errors so endpoints can bubble them up.
+    """
     try:
-        file_bytes = base64.b64decode(req.pdf_base64)
+        file_bytes = base64.b64decode(file_b64)
     except Exception:
         raise HTTPException(status_code=400, detail="Nieprawidłowy plik (base64)")
 
@@ -741,15 +739,164 @@ async def upload_manifest(req: ManifestUploadRequest):
     else:
         raise HTTPException(status_code=400, detail="Nieobsługiwany format pliku (oczekiwany PDF, XLS lub XLSX)")
 
-    name = (req.name or "").strip() or f"Trasa {datetime.now(timezone.utc).strftime('%d.%m.%Y %H:%M')}"
-    route = Route(name=name, stops=stops)
-    await db.routes.insert_one(route.model_dump())
+    final_name = (name or "").strip() or f"Trasa {datetime.now(timezone.utc).strftime('%d.%m.%Y %H:%M')}"
+    return Route(name=final_name, stops=stops)
 
-    # Geocode in the background so the client gets the route immediately.
-    # 100+ Photon lookups can take ~30-60 s and easily exceed ingress timeouts.
+
+# ---------- Routes ----------
+@api_router.get("/")
+async def root():
+    return {"message": "Courier API ok"}
+
+
+@api_router.post("/manifest/upload")
+async def upload_manifest(req: ManifestUploadRequest):
+    route = await _parse_manifest_to_route(req.pdf_base64, req.name)
+    await db.routes.insert_one(route.model_dump())
+    _spawn_background(_background_geocode_route(route.id))
+    return route.model_dump()
+
+
+# ---------- Transfer (gopossible.pl → mobile via QR) ----------
+TRANSFER_EXPIRY_HOURS = 24
+
+
+def _gen_transfer_code() -> str:
+    """6-char alphanumeric code (uppercase, no ambiguous 0/O/1/I)."""
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    import secrets as _s
+    return "".join(_s.choice(alphabet) for _ in range(6))
+
+
+def _require_api_key(x_api_key: Optional[str]) -> None:
+    if not GOPOSSIBLE_API_KEY:
+        raise HTTPException(status_code=500, detail="Integracja niedostępna — brak GOPOSSIBLE_API_KEY")
+    if not x_api_key or x_api_key.strip() != GOPOSSIBLE_API_KEY:
+        raise HTTPException(status_code=401, detail="Nieautoryzowany — niepoprawny X-Api-Key")
+
+
+@api_router.post("/transfer/create")
+async def transfer_create(
+    req: ManifestUploadRequest,
+    x_api_key: Optional[str] = Header(default=None, alias="X-Api-Key"),
+):
+    """Called by gopossible.pl backend to push a parsed route to a courier's phone.
+
+    Headers:
+      X-Api-Key: <GOPOSSIBLE_API_KEY>
+    Body: { pdf_base64, name? }   (same shape as /manifest/upload)
+    Returns:
+      {
+        "transfer_code": "ABC234",        # show as text + inside QR
+        "qr_payload":   "gopossible:transfer:ABC234",
+        "route_id":     "...",            # already parsed and persisted
+        "stops":        132,
+        "expires_at":   "2026-06-26T18:..."
+      }
+    """
+    _require_api_key(x_api_key)
+
+    # Parse the manifest right away — fail fast if it's malformed.
+    route = await _parse_manifest_to_route(req.pdf_base64, req.name)
+    await db.routes.insert_one(route.model_dump())
     _spawn_background(_background_geocode_route(route.id))
 
-    return route.model_dump()
+    # Generate a unique pairing code. Retry on the (extremely rare) collision.
+    code = _gen_transfer_code()
+    for _ in range(5):
+        existing = await db.transfers.find_one({"_id": code})
+        if not existing:
+            break
+        code = _gen_transfer_code()
+
+    # Add hours via timedelta
+    from datetime import timedelta as _td
+    real_expiry = datetime.now(timezone.utc) + _td(hours=TRANSFER_EXPIRY_HOURS)
+    expires_iso = real_expiry.isoformat()
+
+    await db.transfers.insert_one({
+        "_id": code,
+        "route_id": route.id,
+        "created_at": utc_now_iso(),
+        "expires_at": expires_iso,
+        "claimed_at": None,
+        "source": "gopossible.pl",
+    })
+
+    return {
+        "transfer_code": code,
+        "qr_payload": f"gopossible:transfer:{code}",
+        "route_id": route.id,
+        "stops": len(route.stops),
+        "expires_at": expires_iso,
+    }
+
+
+@api_router.get("/transfer/{code}")
+async def transfer_fetch(code: str):
+    """Called by the mobile app after scanning the QR code on gopossible.pl.
+
+    Returns the full route (geocoding may still be in progress — client polls
+    the existing /api/routes/{route_id} endpoint for live updates).
+    """
+    code_norm = (code or "").strip().upper()
+    if not code_norm:
+        raise HTTPException(status_code=400, detail="Brak kodu transferu")
+
+    transfer = await db.transfers.find_one({"_id": code_norm})
+    if not transfer:
+        raise HTTPException(status_code=404, detail="Kod nie istnieje lub wygasł")
+
+    # Expiry check
+    try:
+        exp = datetime.fromisoformat(transfer["expires_at"])
+        if exp.tzinfo is None:
+            exp = exp.replace(tzinfo=timezone.utc)
+        if exp < datetime.now(timezone.utc):
+            raise HTTPException(status_code=410, detail="Kod wygasł — poproś dyspozytora o nowy")
+    except HTTPException:
+        raise
+    except Exception:
+        pass
+
+    route = await db.routes.find_one({"id": transfer["route_id"]}, {"_id": 0})
+    if not route:
+        raise HTTPException(status_code=404, detail="Trasa już została usunięta")
+
+    # Mark first claim (informational only — we don't lock the code so the courier
+    # can re-scan after closing the app).
+    if not transfer.get("claimed_at"):
+        await db.transfers.update_one(
+            {"_id": code_norm},
+            {"$set": {"claimed_at": utc_now_iso()}},
+        )
+
+    # Strip heavy fields from list view (same as /routes/{id})
+    for s in route.get("stops", []):
+        s.pop("photo_base64", None)
+        s.pop("signature_base64", None)
+
+    return {
+        "route": route,
+        "transfer": {
+            "code": code_norm,
+            "created_at": transfer.get("created_at"),
+            "claimed_at": transfer.get("claimed_at") or utc_now_iso(),
+            "expires_at": transfer.get("expires_at"),
+            "source": transfer.get("source"),
+        },
+    }
+
+
+# Public, no-auth check (used by gopossible.pl to verify integration end-to-end).
+@api_router.get("/transfer/{code}/status")
+async def transfer_status(code: str):
+    code_norm = (code or "").strip().upper()
+    transfer = await db.transfers.find_one({"_id": code_norm}, {"_id": 0})
+    if not transfer:
+        raise HTTPException(status_code=404, detail="Brak kodu")
+    return transfer
+
 
 
 @api_router.get("/routes")

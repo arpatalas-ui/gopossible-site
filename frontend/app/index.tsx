@@ -140,6 +140,15 @@ export default function HomeScreen() {
             </>
           )}
         </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.scanBtn}
+          onPress={() => router.push("/scan")}
+          testID="scan-qr-btn"
+        >
+          <Ionicons name="qr-code-outline" size={20} color={colors.text} />
+          <Text style={styles.scanBtnText}>  SKANUJ KOD Z gopossible.pl</Text>
+        </TouchableOpacity>
       </View>
 
       {error ? (
@@ -234,6 +243,18 @@ const styles = StyleSheet.create({
   },
   uploadBtnDisabled: { opacity: 0.7 },
   uploadBtnText: { color: "#fff", fontSize: 15, fontWeight: "900", letterSpacing: 0.8 },
+  scanBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.card,
+    height: 48,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: colors.text,
+    marginTop: 10,
+  },
+  scanBtnText: { color: colors.text, fontSize: 13, fontWeight: "900", letterSpacing: 0.8 },
   listHeader: { paddingBottom: 12, paddingHorizontal: 4 },
   errorBox: {
     marginHorizontal: 20,
