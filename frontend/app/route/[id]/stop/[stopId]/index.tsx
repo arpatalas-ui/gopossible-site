@@ -6,6 +6,8 @@ import {
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
+  Linking,
+  Platform,
 } from "react-native";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -108,6 +110,37 @@ export default function StopScreen() {
           <>
             <Text style={styles.label}>TELEFON</Text>
             <Text style={styles.recipient}>{stop.phone}</Text>
+            <View style={styles.contactRow}>
+              <TouchableOpacity
+                style={styles.contactBtn}
+                onPress={() => Linking.openURL(`tel:${stop.phone.replace(/\s+/g, "")}`)}
+                testID="call-btn"
+              >
+                <Ionicons name="call" size={18} color="#fff" />
+                <Text style={styles.contactText}>  ZADZWOŃ</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.contactBtn, styles.contactBtnAlt]}
+                onPress={() => {
+                  const phone = stop.phone.replace(/\s+/g, "");
+                  const pkg = stop.package_numbers[0] || "";
+                  const recipient = stop.recipient_name || "Pan/Pani";
+                  const body = encodeURIComponent(
+                    `Dzień dobry, ${recipient}. Jestem kurierem z paczką nr ${pkg}. Proszę o kontakt aby umówić dostawę.`
+                  );
+                  const url = Platform.select({
+                    ios: `sms:${phone}&body=${body}`,
+                    android: `sms:${phone}?body=${body}`,
+                    default: `sms:${phone}?body=${body}`,
+                  })!;
+                  Linking.openURL(url).catch(() => {});
+                }}
+                testID="sms-btn"
+              >
+                <Ionicons name="chatbubble-ellipses" size={18} color={colors.text} />
+                <Text style={[styles.contactText, { color: colors.text }]}>  SMS</Text>
+              </TouchableOpacity>
+            </View>
           </>
         )}
 
@@ -208,6 +241,22 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   pkgText: { color: colors.text, fontWeight: "700", marginLeft: 4 },
+  contactRow: { flexDirection: "row", gap: 8, marginTop: 10 },
+  contactBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    height: 48,
+    borderRadius: 10,
+    backgroundColor: colors.primary,
+  },
+  contactBtnAlt: {
+    backgroundColor: colors.card,
+    borderWidth: 2,
+    borderColor: colors.text,
+  },
+  contactText: { color: "#fff", fontWeight: "900", fontSize: 13, letterSpacing: 0.5 },
   navBtn: {
     flexDirection: "row",
     alignItems: "center",

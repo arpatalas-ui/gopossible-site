@@ -129,9 +129,19 @@ function StopRow({ stop, onPress }: { stop: Stop; onPress: () => void }) {
         {!!stop.recipient_name && (
           <Text style={styles.recipient} numberOfLines={1}>{stop.recipient_name}</Text>
         )}
-        <Text style={styles.pkgCount}>
-          {stop.package_numbers.length} {stop.package_numbers.length === 1 ? "paczka" : "paczki"}
-        </Text>
+        {stop.package_numbers.length > 0 && (
+          <View style={styles.pkgChipsRow}>
+            {stop.package_numbers.slice(0, 2).map((p) => (
+              <View key={p} style={styles.pkgChipSmall} testID={`pkg-chip-${p}`}>
+                <Ionicons name="cube-outline" size={11} color={colors.text} />
+                <Text style={styles.pkgChipText}>{p}</Text>
+              </View>
+            ))}
+            {stop.package_numbers.length > 2 && (
+              <Text style={styles.pkgMore}>+{stop.package_numbers.length - 2}</Text>
+            )}
+          </View>
+        )}
         <View style={styles.badgeRow}>
           <StatusBadge status={stop.status} />
           {(stop.cod_amount > 0 || (stop.extra_fees || 0) > 0 || stop.is_cod) ? (
@@ -191,6 +201,13 @@ const styles = StyleSheet.create({
   orderText: { color: "#fff", fontWeight: "900", fontSize: 16 },
   address: { fontSize: 16, fontWeight: "800", color: colors.text, lineHeight: 22 },
   recipient: { fontSize: 14, color: colors.textSecondary, marginTop: 2 },
-  pkgCount: { fontSize: 12, color: colors.textSecondary, marginTop: 4 },
+  pkgChipsRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", marginTop: 6, gap: 4 },
+  pkgChipSmall: {
+    flexDirection: "row", alignItems: "center", gap: 3,
+    backgroundColor: colors.bg, paddingHorizontal: 8, paddingVertical: 3,
+    borderRadius: 6, borderWidth: 1, borderColor: colors.border,
+  },
+  pkgChipText: { color: colors.text, fontWeight: "800", fontSize: 11, letterSpacing: 0.3 },
+  pkgMore: { fontSize: 11, color: colors.textSecondary, fontWeight: "700", marginLeft: 2 },
   badgeRow: { flexDirection: "row", alignItems: "center", marginTop: 8, flexWrap: "wrap", gap: 6 },
 });

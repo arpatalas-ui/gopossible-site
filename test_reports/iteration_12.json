@@ -1,0 +1,34 @@
+{
+  "summary": "Iteration 12 — three UX micro-changes verified end-to-end on mobile viewport 390x844 against the existing TEST_KOP_iter11 route (132 stops). (1) ROUTE LIST: every stop row now renders a small pkg-chip with the real tracking number as its testID (e.g. pkg-chip-PX7572089752); 56 visible rows on first screen produced 56 chips with text matching the actual package numbers. The old '1 paczka / N paczki' counter is gone (regex /\\d+ paczk[ai]/g returned null on the full DOM). All 132 stops still resolve to ONE package each in this dataset, so the 2-chip and '+N' overflow paths could not be exercised live — code path inspected in /app/frontend/app/route/[id]/index.tsx:134-143 confirms slice(0,2) + '+N' for length>2. (2) ADDRESS CONFIRMATION: scanned visible addresses + full API response (132 stops) for 'PP ', 'Goleniów', 'E225', 'Placówka', 'nadawcza' — 0 leaks. Addresses are always pulled from ADRESAT col 18. (3) STOP DETAIL (Andrzej Walczak, phone +48 507 529 070, pkg PX7572089752): under the TELEFON label two rectangular buttons are rendered side-by-side — call-btn (red filled, label 'ZADZWOŃ', phone icon) and sms-btn (outlined, white bg with dark border, label 'SMS', chat icon). Both expose the required testIDs. Tap on sms-btn triggered window.open with EXACTLY 'sms:+48507529070?body=Dzie%C5%84%20dobry%2C%20Andrzej%20Walczak.%20Jestem%20kurierem%20z%20paczk%C4%85%20nr%20PX7572089752.%20Prosz%C4%99%20o%20kontakt%20aby%20um%C3%B3wi%C4%87%20dostaw%C4%99.' — decodes to 'Dzień dobry, Andrzej Walczak. Jestem kurierem z paczką nr PX7572089752. Proszę o kontakt aby umówić dostawę.' ✓. Tap on call-btn produced no captured navigation in window.open hook (RN-Web routes tel: through an anchor/href path that the headless browser silently rejects); critically — no console error, no crash, no red screen, exactly as the review request expected. 0 console errors over the full session. Smoke OK: route list, stop detail, navigation back all load cleanly.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "shadow* style props", "issue": "Pre-existing RN-web warning '\"shadow*\" style props are deprecated. Use \"boxShadow\".' is still firing (uploadBtn in /app/frontend/app/index.tsx and stopCard shadow* in /app/frontend/app/route/[id]/index.tsx:186-188). Carry-over from iter 10/11, not introduced by iter 12."}
+    ]
+  },
+  "test_report_links": [
+    "/tmp/route_list.png",
+    "/tmp/stop_detail.png"
+  ],
+  "action_items": [
+    "OPTIONAL (carry-over): migrate remaining shadow* props to boxShadow on uploadBtn and on stopCard (/app/frontend/app/route/[id]/index.tsx:186-188) to silence the RN-Web deprecation warning.",
+    "OPTIONAL: the customer XLS in seeded data has 132 stops each with exactly ONE package, so the 2-chip layout and the '+N' overflow on the route list are only verified by code inspection, not by a live render. Consider adding a synthetic seed or a unit test for the slice(0,2)+overflow rendering if regression coverage matters."
+  ],
+  "critical_code_review_comments": [
+    "StopRow chips: pkg_numbers.slice(0,2).map(...) + length>2 '+N' overflow is implemented cleanly in /app/frontend/app/route/[id]/index.tsx:134-143. testID pattern pkg-chip-{packageNumber} matches the review spec exactly.",
+    "SMS body construction in /app/frontend/app/route/[id]/stop/[stopId]/index.tsx:124-136 uses encodeURIComponent and includes recipient + first package number. Falls back to 'Pan/Pani' when recipient is missing and '' when no package — safe defaults.",
+    "Platform.select differentiates iOS (sms:NUMBER&body=) vs Android/web (sms:NUMBER?body=). Correct per iOS URL scheme conventions.",
+    "Phone is normalised with .replace(/\\s+/g, '') before being put into the tel:/sms: URL — produces tel:+48507529070 as required.",
+    "Address rendering uses stop.address verbatim, which is sourced server-side from ADRESAT (XLS col 18). The Polish-character corruption seen in 'Szćzećin, Szarotki7/10' is a data-quality artefact carried over from iter 11 (already documented); it is NOT a sending-office leak."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (frontend-only iteration)", "frontend": "100% — route list chips ✓, no sending-office leak ✓, call/sms buttons + sms URL template ✓, 0 console errors ✓"},
+  "seed_data_creation": "Reused existing route TEST_KOP_iter11 (id 6cbac40a-3f89-4fe3-b5cd-ec88efe22eef) from iter 11 seed; no new data created or mutated.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "tel:/mailto:/sms: URL clicks on RN-Web do NOT always go through the window.open patch — for sms: the openURL path used here calls window.open (verified captured), but for tel: the headless Chromium just no-ops. Either accept silent success (review request explicitly allows this) or intercept by overriding navigator clicks on anchor[href^='tel:'] before the tap. Captured sms URL was: sms:+48507529070?body=<urlencoded Polish template>. The seeded route has 132 stops all with exactly 1 package — the 2-chip layout / '+N' overflow on the route list cannot be exercised against this dataset.",
+  "rca_of_issue": "n/a — all three review-request acceptance criteria pass."
+}
