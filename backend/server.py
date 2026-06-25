@@ -133,20 +133,62 @@ LOCATIONIQ_URL = "https://us1.locationiq.com/v1/search"
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
 GEO_UA = "KurierNawigacja/1.0 (courier app)"
 
+# City priors — used to bias geocoding toward the courier's home depot first.
+# Each entry: (city_name_lower, (south, west, north, east), (lat, lng), radius_km)
+# LocationIQ expects viewbox as "lon_left,lat_top,lon_right,lat_bottom" (W,N,E,S).
+_CITY_PRIORS = [
+    {
+        "match": ("szczecin", "szczećin", "szćzećin", "szczecin "),
+        "name": "Szczecin",
+        "viewbox": "14.40,53.55,14.72,53.32",   # tight Szczecin bbox
+        "wide_viewbox": "14.10,53.95,15.10,53.00",  # West Pomerania (~city + okolice)
+        "center": (53.4285, 14.5528),
+        "max_km": 35.0,  # reject pins farther than 35 km from Szczecin centre
+    },
+]
 
-def _locationiq_sync(addr: str) -> Optional[Tuple[float, float]]:
+
+def _math_distance_km(a: Tuple[float, float], b: Tuple[float, float]) -> float:
+    import math
+    lat1, lng1 = a
+    lat2, lng2 = b
+    r = 6371.0
+    p1 = math.radians(lat1)
+    p2 = math.radians(lat2)
+    dp = math.radians(lat2 - lat1)
+    dl = math.radians(lng2 - lng1)
+    x = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * r * math.asin(min(1.0, math.sqrt(x)))
+
+
+def _detect_city_prior(addr: str) -> Optional[dict]:
+    low = (addr or "").lower()
+    for p in _CITY_PRIORS:
+        for needle in p["match"]:
+            if needle in low:
+                return p
+    return None
+
+
+def _locationiq_sync(addr: str, viewbox: Optional[str] = None, bounded: bool = False) -> Optional[Tuple[float, float]]:
     if not addr or not LOCATIONIQ_KEY:
         return None
     try:
+        params = {
+            "key": LOCATIONIQ_KEY,
+            "q": addr,
+            "format": "json",
+            "limit": 1,
+            "countrycodes": "pl",
+            "accept-language": "pl",
+        }
+        if viewbox:
+            params["viewbox"] = viewbox
+            if bounded:
+                params["bounded"] = 1
         r = http_lib.get(
             LOCATIONIQ_URL,
-            params={
-                "key": LOCATIONIQ_KEY,
-                "q": addr,
-                "format": "json",
-                "limit": 1,
-                "countrycodes": "pl",
-            },
+            params=params,
             headers={"Accept-Language": "pl"},
             timeout=10,
         )
@@ -185,14 +227,14 @@ _LIQ_LOCK = asyncio.Lock()
 _LAST_LIQ_CALL = 0.0
 
 
-async def _locationiq_paced(query: str) -> Optional[Tuple[float, float]]:
+async def _locationiq_paced(query: str, viewbox: Optional[str] = None, bounded: bool = False) -> Optional[Tuple[float, float]]:
     global _LAST_LIQ_CALL
     async with _LIQ_LOCK:
         now = time.monotonic()
         wait = 0.55 - (now - _LAST_LIQ_CALL)
         if wait > 0:
             await asyncio.sleep(wait)
-        result = await asyncio.to_thread(_locationiq_sync, query)
+        result = await asyncio.to_thread(_locationiq_sync, query, viewbox, bounded)
         _LAST_LIQ_CALL = time.monotonic()
     return result
 
@@ -215,56 +257,91 @@ async def _nominatim_paced(query: str) -> Optional[Tuple[float, float]]:
 
 
 async def geocode_one(addr: str) -> Optional[Tuple[float, float]]:
-    """Cache-aware geocoder. LocationIQ first (fast, paid-ish), then Nominatim fallback."""
+    """Cache-aware geocoder with city-prior bias.
+
+    Strategy (for an address that looks like Szczecin):
+      1. Strict Szczecin bounding-box (bounded=1) — best match within city
+      2. Wider West-Pomerania bounding-box (bounded=1) — covers suburbs
+      3. Unbounded country-wide search (fallback)
+    Results that fall too far from the city centre are rejected and the next
+    candidate is tried, so we don't end up with pins in Wrocław/Kraków for a
+    misspelled Szczecin street name.
+    """
     if not addr:
         return None
-    cached = await _cache_lookup(addr)
-    if cached:
-        return cached
     norm = _normalize_address(addr)
     relaxed = _street_only(addr)
-    queries = []
+    prior = _detect_city_prior(norm) or _detect_city_prior(addr)
+
+    def _accept(coords: Tuple[float, float]) -> bool:
+        if not prior:
+            return True
+        return _math_distance_km(coords, prior["center"]) <= prior["max_km"]
+
+    cached = await _cache_lookup(addr)
+    if cached and _accept(cached):
+        return cached
+    if cached and not _accept(cached):
+        # Stale/poisoned cache entry from before the city-prior fix. Invalidate it.
+        try:
+            await db.geocode_cache.delete_one({"_id": _norm_addr(addr)})
+        except Exception:
+            pass
+
+    # Build candidate query strings (most specific → most relaxed).
+    queries: list = []
+    seen = set()
+
+    def _push(q: str) -> None:
+        q = (q or "").strip(" ,;-")
+        if q and q not in seen:
+            seen.add(q)
+            queries.append(q)
+
     for base in (norm, addr):
-        for tail in (", Polska", ""):
-            q = (base + tail).strip(" ,")
-            if q and q not in queries:
-                queries.append(q)
-    # Relaxed query (no apartment / extra tokens)
-    if relaxed and relaxed not in queries:
-        queries.append(relaxed + ", Polska")
-        queries.append(relaxed)
-    # Last 2 comma segments fallback (city + street only)
+        _push(base + ", Polska")
+        _push(base)
+    if relaxed:
+        _push(relaxed + ", Polska")
+        _push(relaxed)
     if "," in norm:
         parts = [p.strip() for p in norm.split(",") if p.strip()]
         if len(parts) >= 2:
-            tail = ", ".join(parts[-2:]) + ", Polska"
-            if tail not in queries:
-                queries.append(tail)
-    # Accent-stripped fallback
+            _push(", ".join(parts[-2:]) + ", Polska")
     stripped = _strip_pl(norm)
     if stripped and stripped != norm:
-        queries.append(stripped + ", Polska")
+        _push(stripped + ", Polska")
 
-    seen: set = set()
-    # Try LocationIQ for each query first (preferred when key present)
+    def _accept(coords: Tuple[float, float]) -> bool:
+        if not prior:
+            return True
+        return _math_distance_km(coords, prior["center"]) <= prior["max_km"]
+
     if LOCATIONIQ_KEY:
+        # Stage 1 — strict city bbox
+        if prior:
+            for q in queries:
+                coords = await _locationiq_paced(q, viewbox=prior["viewbox"], bounded=True)
+                if coords and _accept(coords):
+                    await _cache_store(addr, *coords)
+                    return coords
+            # Stage 2 — wider region bbox
+            for q in queries:
+                coords = await _locationiq_paced(q, viewbox=prior["wide_viewbox"], bounded=True)
+                if coords and _accept(coords):
+                    await _cache_store(addr, *coords)
+                    return coords
+        # Stage 3 — unbounded country-wide
         for q in queries:
-            if q in seen:
-                continue
-            seen.add(q)
             coords = await _locationiq_paced(q)
-            if coords:
+            if coords and _accept(coords):
                 await _cache_store(addr, *coords)
                 return coords
 
-    # Nominatim fallback
-    seen.clear()
+    # Nominatim fallback (no viewbox support here — just verify city distance)
     for q in queries:
-        if q in seen:
-            continue
-        seen.add(q)
         coords = await _nominatim_paced(q)
-        if coords:
+        if coords and _accept(coords):
             await _cache_store(addr, *coords)
             return coords
     return None
