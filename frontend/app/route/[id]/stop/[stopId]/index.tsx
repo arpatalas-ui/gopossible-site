@@ -217,7 +217,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginTop: 24,
   },
-  navBtnText: { color: "#fff", fontSize: 15, fontWeight: "900", letterSpacing: 0.8 },
+  navBtnText: { color: "#fff", fontSize: 15, fontWeight: "900", letterSpacing: 0.8, textTransform: "uppercase" },
   resetBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -246,5 +246,5 @@ const styles = StyleSheet.create({
   },
   deliveredBtn: { backgroundColor: colors.success },
   absentBtn: { backgroundColor: colors.absent },
-  actionText: { color: "#fff", fontSize: 14, fontWeight: "900", letterSpacing: 0.8 },
+  actionText: { color: "#fff", fontSize: 14, fontWeight: "900", letterSpacing: 0.8, textTransform: "uppercase" },
 });
