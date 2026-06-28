@@ -68,10 +68,11 @@ export default function LoginScreen() {
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.brandBox}>
-            <View style={styles.brandLogo}>
-              <Text style={styles.brandLogoText}>GP</Text>
-            </View>
-            <Text style={styles.brand}>GoPossible</Text>
+            <Image
+              source={require("@/assets/images/gopossible-full-logo.png")}
+              style={styles.brandLogoImg}
+              resizeMode="contain"
+            />
             <Text style={styles.brandSub}>Aplikacja kuriera</Text>
           </View>
 
@@ -158,13 +159,11 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   scroll: { padding: 24, paddingTop: 40, paddingBottom: 24, minHeight: "100%" },
   brandBox: { alignItems: "center", marginBottom: 28 },
-  brandLogo: {
-    width: 72, height: 72, borderRadius: 18, backgroundColor: colors.primary,
-    alignItems: "center", justifyContent: "center", marginBottom: 12,
-    boxShadow: "0px 6px 14px rgba(230,51,41,0.3)", elevation: 5,
+  brandLogoImg: {
+    width: 280,
+    height: 75,
+    marginBottom: 6,
   },
-  brandLogoText: { color: "#fff", fontSize: 26, fontWeight: "900", letterSpacing: 1 },
-  brand: { fontSize: 26, fontWeight: "900", color: colors.text, letterSpacing: 0.5 },
   brandSub: { fontSize: 13, color: colors.textSecondary, marginTop: 4, letterSpacing: 0.4 },
   card: {
     backgroundColor: colors.card, padding: 20, borderRadius: 16,
@@ -193,5 +192,4 @@ const styles = StyleSheet.create({
   footer: { marginTop: 24, textAlign: "center", color: colors.textSecondary, fontSize: 12, lineHeight: 18 },
 });
 
-// silence unused import warning for Image (used by future logo asset)
-void Image;
+// (logo image bundled from assets/images/gopossible-logo.png)

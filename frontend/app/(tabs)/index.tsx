@@ -142,15 +142,11 @@ export default function HomeScreen() {
     <SafeAreaView style={styles.container} edges={["top", "left", "right"]} testID="home-screen">
       <View style={styles.header}>
         <SectionLabel text="SYSTEM KURIERSKI" />
-        <View style={styles.brandRow}>
-          <View style={styles.brandTile}>
-            <Text style={styles.brandTileText}>GO</Text>
-          </View>
-          <Text style={styles.brandWordmark}>
-            <Text style={{ color: colors.primary }}>KURIER</Text>
-            <Text style={{ color: colors.text }}>.</Text>
-          </Text>
-        </View>
+        <Image
+          source={require("@/assets/images/gopossible-full-logo.png")}
+          style={styles.headerLogo}
+          resizeMode="contain"
+        />
         <Text style={styles.subtitle}>Wgraj manifest PDF — AI utworzy trasę i pokaże paczki na mapie.</Text>
       </View>
 
@@ -279,6 +275,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   header: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 4 },
   brandRow: { flexDirection: "row", alignItems: "center", marginTop: 6, marginBottom: 2 },
+  headerLogo: { width: 240, height: 64, marginTop: 6, marginBottom: 2 },
   brandTile: {
     backgroundColor: colors.primary,
     borderRadius: 6,
