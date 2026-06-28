@@ -33,10 +33,10 @@ type Profile = {
 const PROFILE_KEY = "@gopossible/courier_profile_v1";
 const SETTINGS_KEY = "@gopossible/courier_settings_v1";
 
-type Settings = { autoAdvance: boolean };
+type Settings = { autoAdvance: boolean; gpsTracking: boolean };
 
 const DEFAULT_PROFILE: Profile = { name: "", courier_id: "", phone: "", branch: "" };
-const DEFAULT_SETTINGS: Settings = { autoAdvance: true };
+const DEFAULT_SETTINGS: Settings = { autoAdvance: true, gpsTracking: true };
 
 export default function CourierScreen() {
   const router = useRouter();
@@ -134,6 +134,14 @@ export default function CourierScreen() {
     const next = { ...settings, autoAdvance: !settings.autoAdvance };
     setSettings(next);
     try { await AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(next)); } catch {}
+  };
+
+  const toggleGpsTracking = async () => {
+    const next = { ...settings, gpsTracking: !settings.gpsTracking };
+    setSettings(next);
+    try { await AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(next)); } catch {}
+    // The actual GPS loop (in app/(tabs)/_layout.tsx) re-reads this key on each
+    // ping, so toggling here propagates within ≤30 s without remount.
   };
 
   const clearLocalCache = () => {
@@ -301,6 +309,15 @@ export default function CourierScreen() {
         {/* SETTINGS */}
         <View style={styles.sectionWrap}>
           <SectionLabel text="USTAWIENIA" />
+          <TouchableOpacity style={styles.settingRow} onPress={toggleGpsTracking} testID="gps-toggle">
+            <View style={{ flex: 1 }}>
+              <Text style={styles.settingTitle}>Wysyłaj lokalizację GPS</Text>
+              <Text style={styles.settingSub}>Co 30 s do gopossible.pl (gdy apka otwarta)</Text>
+            </View>
+            <View style={[styles.toggle, settings.gpsTracking && styles.toggleOn]}>
+              <View style={[styles.toggleDot, settings.gpsTracking && styles.toggleDotOn]} />
+            </View>
+          </TouchableOpacity>
           <TouchableOpacity style={styles.settingRow} onPress={toggleAutoAdvance} testID="auto-advance-toggle">
             <View style={{ flex: 1 }}>
               <Text style={styles.settingTitle}>Auto-przejście do następnego stopu</Text>

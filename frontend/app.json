@@ -13,7 +13,7 @@
       "infoPlist": {
         "NSCameraUsageDescription": "Zdjęcie miejsca pozostawienia paczki",
         "NSPhotoLibraryUsageDescription": "Wybór zdjęć paczki z galerii",
-        "NSLocationWhenInUseUsageDescription": "Pokazujemy Twoją pozycję na mapie trasy"
+        "NSLocationWhenInUseUsageDescription": "Pozycja kuriera na mapie i wysyłana do dyspozytora"
       }
     },
     "android": {

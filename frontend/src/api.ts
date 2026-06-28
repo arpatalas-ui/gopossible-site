@@ -97,4 +97,20 @@ export const api = {
     const params = courier ? `?courier=${encodeURIComponent(courier)}` : "";
     return `${BASE}/api/routes/${routeId}/report${params}`;
   },
+  postLocation: (ping: {
+    courier_id?: string;
+    courier_name?: string;
+    lat: number;
+    lng: number;
+    accuracy?: number | null;
+    speed?: number | null;
+    heading?: number | null;
+    altitude?: number | null;
+    route_id?: string;
+    client_ts?: string;
+  }) =>
+    request<{ ok: boolean; ts: string }>(`/courier/locations`, {
+      method: "POST",
+      body: JSON.stringify(ping),
+    }),
 };

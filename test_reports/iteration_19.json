@@ -1,0 +1,39 @@
+{
+  "summary": "Iteration 19 — GPS courier location tracking endpoints fully verified with zero regressions. New backend tests: 17/17 PASS in 1.68s covering POST /api/courier/locations (full ping, minimal lat+lng-only, 422 on missing lat / missing lng / lat=string / lng=string), GET /api/courier/locations auth (no key → 401, wrong key → 401, single-char dummy key → 401, valid key → 200 with since_minutes=60 default + couriers[] list), aggregation correctness (3 pings same courier_id → aggregated view returns exactly 1 entry with LATEST coords (53.3000, 14.5200); history view with ?courier_id= returns all 3 sorted desc by created_at), two-courier aggregation (2 different courier_ids → 2 entries one each, latest for cid_a is the second ping), since_minutes=1 includes a freshly inserted ping, since_minutes=0 and 1441 rejected with 422, response excludes _id and created_at_dt in both aggregated and history views, TTL index exists on courier_locations.created_at_dt with expireAfterSeconds=86400. Regression suite re-run: iteration 16+17+18 → 36/36 PASS in 10.93s (transfer create/fetch/status, approve/unapprove, address update with Szczecin bias, deliver/absent/reset, regeocode 404, list_routes _id strip, PDF report endpoint with %PDF magic + Content-Disposition + 404 paths). Combined backend: 53/53 PASS. Code review: locations.py is clean (49 LoC, idiomatic, MongoDB internals stripped via $project, TTL index lazy-created via _TTL_READY flag, X-Api-Key timing-comparison uses strip(), since_minutes constrained to 1-1440 via Query). Per request, frontend NOT tested (Expo Go cannot fake GPS).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration19_locations.py",
+    "/app/test_reports/pytest/iteration_19.xml",
+    "/app/test_reports/pytest/iteration_19_regression.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "/app/backend/app_core/routers/locations.py:38-49 — `_ensure_indexes()` uses a module-level _TTL_READY flag so the two create_index() calls only run once per process. Mongo's create_index is idempotent so this is purely a perf optimisation. The try/except swallows errors silently — acceptable since indexes are advisory; verified TTL index is in fact created via direct Mongo introspection.",
+    "/app/backend/app_core/routers/locations.py:58-63 — POST stores BOTH `created_at` (ISO string, used for $gte filtering) and `created_at_dt` (BSON Date, used by TTL). String-based ISO comparison works because all timestamps are written with the same TZ format (utc isoformat with +00:00) — lexicographic order = chronological order. Validated by since_minutes=1 test.",
+    "/app/backend/app_core/routers/locations.py:81 — X-Api-Key check uses `.strip()` before comparison, which guards against accidental whitespace from copy/paste. Constant-time comparison would be slightly stronger (hmac.compare_digest) but for a per-request shared secret this is fine.",
+    "/app/backend/app_core/routers/locations.py:95-107 — Aggregation pipeline correctly does $match (window) → $sort desc → $group $first to get latest-per-courier, then $replaceRoot + $project to strip internals. Tested with 2 couriers and 3 same-courier pings.",
+    "/app/backend/app_core/routers/locations.py:69 — Query(since_minutes, ge=1, le=1440) bounds enforced by FastAPI/Pydantic → returns 422 for 0 or 1441. Verified.",
+    "GOPOSSIBLE_API_KEY is loaded once in db.py from backend/.env — same secret reused for /api/transfer/create and /api/courier/locations, which is consistent (single ops key for the dispatcher integration)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration19_locations.py (new — 17 tests covering POST/GET location pings, auth, aggregation, history, since_minutes window, TTL index)"
+  ],
+  "success_rate": {
+    "backend": "100% (53/53 — 17 new iteration-19 + 20 iteration-16 + 10 iteration-17 + 6 iteration-18 regression)",
+    "frontend": "Not tested per request (Expo Go cannot fake GPS; UI pill 'GPS niedostępny (web)' already verified by main agent)"
+  },
+  "seed_data_creation": "Test data is auto-cleaned by a module-scope autouse fixture: it deletes pings with courier_id starting with the random TEST_<uuid8> prefix used by each test run, plus the few empty-courier_id pings inserted by minimal-ping / TTL probe tests (lat=0,lng=0 and the Jan Kowalski full ping). No persistent data left in the courier_locations collection after the suite finishes.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Iteration 19 added two endpoints in /app/backend/app_core/routers/locations.py: POST /api/courier/locations (public — receives GPS pings every 30s from the courier mobile app) and GET /api/courier/locations (X-Api-Key auth — reads aggregated latest-per-courier positions for gopossible.pl dispatcher; supports ?courier_id=<id> for full history and ?since_minutes=N for window 1-1440). Collection: courier_locations with TTL index on created_at_dt (24h auto-delete) plus compound (courier_id, created_at desc) index. Both indexes lazy-created on first POST via _ensure_indexes() guarded by _TTL_READY flag. GOPOSSIBLE_API_KEY env var is shared with /api/transfer/create. Regression suites for future iterations: test_iteration16_transfer_approve_address.py (20 tests) + test_iteration17_refactor_regression.py (10 tests) + test_iteration18_pdf_report.py (6 tests) + test_iteration19_locations.py (17 tests) = 53 total backend tests in ~13s. Reference routes still ROUTE_A=8c0a5cbe-... and ROUTE_B=1145d1f9-... (see iteration-18 report).",
+  "rca_of_issue": "N/A — feature acceptance + regression verification; zero issues found. (Note: one test failure during initial run was a TEST-script bug — `requests` library rejects whitespace-only header values, so the strip()-branch was instead exercised with a non-empty wrong key. Adjusted to use 'x' instead of '   '; not a backend bug.)"
+}
