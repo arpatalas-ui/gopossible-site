@@ -1,0 +1,33 @@
+{
+  "summary": "Iteration 22 — re-verification of iter21 HIGH bug fix on deliver.tsx camera-permission-screen branch. ALL THREE FRONTEND CHECKS PASS on real preview (mobile 390x844, real login testtest0gp/Test2026!, real route 8c0a5cbe-...): (1) method-mailbox -> camera-permission-screen renders WITHOUT skip-photo-btn, WITH grant-camera-btn, AND with the red Polish warning 'Dla tej metody dostawy zdjęcie jest WYMAGANE.' — confirmed visible in DOM and screenshot. (2) method-neighbor -> camera-permission-screen renders WITH skip-photo-btn AND grant-camera-btn AND WITHOUT the 'WYMAGANE' warning. (3) Tapping skip-photo-btn on the neighbor flow advances to signature-screen (confirm-text 'Potwierdzam odebranie przesyłki...' is rendered). Code review of deliver.tsx:172-208 confirms the fix matches the spec — skip button wrapped in {!methodInfo?.photoRequired && (...)} mirroring the cameraBar branch (lines 224-237); warning rendered conditionally via {methodInfo?.photoRequired && (...)} at lines 181-185; permission hint adapts to methodInfo?.hint at line 179. Backend regression: 63/63 PASS (iter16+17+18+19+21 suite in 16.65s, no flakes). No new bugs found. The HIGH-priority bypass bug from iter21 is FULLY RESOLVED.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/pytest/iteration_22_regression.xml",
+    "/app/backend/tests/test_iteration21_delivery_method_geocode.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "deliver.tsx:172-208 — camera-permission-screen branch is now correct. Lines 181-185 render the red WYMAGANE warning only when methodInfo?.photoRequired; lines 193-204 gate skip-photo-btn behind !methodInfo?.photoRequired; line 179 surfaces methodInfo?.hint with a sensible fallback. The branch is now symmetric with the cameraBar branch at lines 223-242 — same gating logic on photoRequired in both paths, so the courier cannot bypass the mandatory photo regardless of whether the camera permission is granted, pending, or denied. No regressions introduced to the signature/photo-review/method screens.",
+    "deliver.tsx is now 457 lines — still under the 700-line threshold but trending up. If another flow lands here, consider extracting the per-step screens (MethodPicker, PermissionScreen, CameraStep, PhotoReview, SignatureStep) into a sibling /components/deliver/ folder.",
+    "Backend POST /api/routes/{rid}/stops/{sid}/deliver still accepts any combination of delivery_method + photo_base64 (no server-side enforcement of the photo-required contract). The frontend now correctly guards this, but a defence-in-depth check in the API (reject mailbox/door/fence without photo) would catch any future regression or non-app client. Optional, not blocking."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% (63/63 regression PASS in 16.65s)",
+    "frontend": "100% (3/3 verification steps PASS: mailbox-permission renders without skip + with WYMAGANE; neighbor-permission renders with skip + without WYMAGANE; skip on neighbor advances to signature-screen)"
+  },
+  "seed_data_creation": "None. Re-used route 8c0a5cbe-8372-4ea5-a678-4191b163c10b and read first pending stop e715b28c-90b5-4318-9e51-8092fc12bdef via GET /api/routes/{id}. Did NOT tap Zapisz on any step, so no mutation to the live route was performed. Backend regression tests reuse the same route but consume 4 pending stops per run (set to delivered with TEST_iter21_ note prefix) — this is unchanged from iter21.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iter22 confirms the iter21 HIGH bug is fixed. Files unchanged from iter21 except for the deliver.tsx patch in lines 172-208 (verified). Backend has had no changes since iter21. Reusable assets: /app/backend/tests/test_iteration21_delivery_method_geocode.py covers /api/geocode + delivery_method persistence; combined iter16+17+18+19+21 regression suite runs in ~17s and is the canonical backend smoke test. For frontend re-tests of the deliver flow, log in with testtest0gp/Test2026! at /login, then navigate to /route/8c0a5cbe-8372-4ea5-a678-4191b163c10b/stop/{first-pending-id}/deliver. Web preview's expo-camera reports permission.granted=false by default, so the camera-permission-screen branch is the one exercised on web — perfect for testing this exact contract. Signature canvas (react-native-signature-canvas) shows 'WebView does not support this platform' on web — that's a known web-preview limitation, NOT a bug.",
+  "rca_of_issue": "RCA of iter21 bug (now fixed): In deliver.tsx the camera-screen branch (permission granted) correctly gated skip-photo-btn behind !methodInfo?.photoRequired, but its sibling camera-permission-screen branch (permission not yet granted) rendered the same TouchableOpacity unconditionally. A courier picking Skrzynka/Pod drzwiami/Za płotem on a fresh install could tap 'Pomiń zdjęcie' before the OS prompted for camera access, bypassing the required photo. Fix applied by main agent: (1) wrap skip-photo-btn in {!methodInfo?.photoRequired && (...)} at deliver.tsx:193-204, mirroring the cameraBar branch; (2) add red 'Dla tej metody dostawy zdjęcie jest WYMAGANE.' Text under the permission title when methodInfo?.photoRequired at lines 181-185; (3) replace generic permission hint with methodInfo?.hint (with fallback) at line 179. Verification: live DOM + screenshot confirm skip-photo-btn is absent for mailbox and present for neighbor, and that the WYMAGANE warning text is only rendered for photo-required methods."
+}

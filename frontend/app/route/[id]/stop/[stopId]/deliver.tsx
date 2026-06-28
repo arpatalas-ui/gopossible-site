@@ -176,8 +176,13 @@ export default function DeliverScreen() {
             <Ionicons name="camera" size={64} color={colors.primary} />
             <Text style={styles.permissionTitle}>Potrzebny dostęp do aparatu</Text>
             <Text style={styles.permissionText}>
-              Aby zrobić zdjęcie miejsca pozostawienia paczki, włącz aparat.
+              {methodInfo?.hint || "Aby zrobić zdjęcie miejsca pozostawienia paczki, włącz aparat."}
             </Text>
+            {methodInfo?.photoRequired && (
+              <Text style={[styles.permissionText, { color: colors.error, fontWeight: "800", marginTop: 8 }]}>
+                Dla tej metody dostawy zdjęcie jest WYMAGANE.
+              </Text>
+            )}
             <TouchableOpacity
               style={styles.primaryBtn}
               onPress={requestPermission}
@@ -185,16 +190,18 @@ export default function DeliverScreen() {
             >
               <Text style={styles.primaryBtnText}>Zezwól na aparat</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.skipBtn}
-              onPress={() => {
-                setPhoto(null);
-                setStep("signature");
-              }}
-              testID="skip-photo-btn"
-            >
-              <Text style={styles.skipText}>Pomiń zdjęcie</Text>
-            </TouchableOpacity>
+            {!methodInfo?.photoRequired && (
+              <TouchableOpacity
+                style={styles.skipBtn}
+                onPress={() => {
+                  setPhoto(null);
+                  setStep("signature");
+                }}
+                testID="skip-photo-btn"
+              >
+                <Text style={styles.skipText}>Pomiń zdjęcie</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </SafeAreaView>
       );
