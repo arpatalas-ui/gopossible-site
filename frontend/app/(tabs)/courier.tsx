@@ -348,12 +348,24 @@ export default function CourierScreen() {
             <TouchableOpacity
               style={[styles.settingRow, { borderColor: colors.error }]}
               onPress={() => {
+                const doLogout = () => { void logout(); };
+                if (Platform.OS === "web") {
+                  // React-Native-Web's Alert.alert is a no-op with multi-button
+                  // configs, so fall back to the native browser confirm dialog.
+                  // @ts-expect-error - window is web-only
+                  if (typeof window !== "undefined" && window.confirm(
+                    `Wyloguj się z konta @${user.username}?`,
+                  )) {
+                    doLogout();
+                  }
+                  return;
+                }
                 Alert.alert(
                   "Wyloguj się?",
                   `Zostaniesz wylogowany z konta @${user.username}. Lokalne ustawienia zostaną zachowane.`,
                   [
                     { text: "Anuluj", style: "cancel" },
-                    { text: "Wyloguj", style: "destructive", onPress: logout },
+                    { text: "Wyloguj", style: "destructive", onPress: doLogout },
                   ],
                 );
               }}
