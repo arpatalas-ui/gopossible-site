@@ -1,0 +1,50 @@
+{
+  "summary": "Iteration 20 — GoPossible portal integration (courier login + my-routes filter + GPS push) verified end-to-end on web preview. Backend regression: 53/53 PASS (iter16+17+18+19 suites unchanged). Frontend (mobile viewport 390x844): steps 1-10 PASS exactly per spec — cold-start → /login redirect, brand 'GoPossible' + LOGIN/HASŁO inputs render, empty-submit shows 'Wpisz login i hasło' (button correctly disabled when fields empty so we tested with spaces which trim to empty), wrong creds 'testtest0gp'/'wrong' shows red 'Nieprawidłowy login lub hasło' box (portal returns 401), correct login redirects to / (token persisted in localStorage @gopossible/session_token_v1), black banner 'PRZYPISANE PRZEZ GoPOSSIBLE: 4' renders, section header is exactly 'MOJE PRZYPISANE TRASY' (not 'MOJE TRASY'), exactly 4 route cards 'test1111 · Tester GoPossible' visible, hint 'Ukrytych 25 tras nieprzypisanych przez dyspozytora.' correct (29 local routes − 4 assigned = 25), Kurier tab header shows 'Tester GoPossible' + '@testtest0gp • tester', settings section shows 'Wyloguj się' with sub-label 'Zalogowano jako @testtest0gp'. Step 11 BLOCKED on web only: Alert.alert() is not implemented in react-native-web (multi-button Alert is a silent no-op), so onPress→Alert.alert(...,[{Anuluj},{Wyloguj,onPress:logout}]) never invokes logout callback on web. Playwright caught 0 native dialogs, token remained in localStorage after click, no /login redirect. This is a known react-native-web limitation, NOT a regression on iOS/Android (native Alert works there). External portal API verified live: POST /api/auth/login-password 200 with session_token, GET /api/courier/my-routes (Bearer) returns count=4 with the four expected courier_route_ids — all four found in local /api/routes (1-to-1 match). Code review: gopossible.ts is clean (124 LoC, PortalError class, pushTracking fire-and-forget), authContext.tsx properly gates via useAuthRedirect, secureStorage.ts has correct web fallback to localStorage, useLocationTracking.ts dual-pushes (internal + portal) and reads active route from AsyncStorage every 30s.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "app/(tabs)/courier.tsx — logout-btn",
+        "issue": "On WEB preview, react-native-web does not implement Alert.alert with multi-button config. Clicking 'Wyloguj się' calls Alert.alert(..., [{text:'Anuluj',style:'cancel'},{text:'Wyloguj',onPress:logout}]) which is a silent no-op on web — no dialog appears, logout callback never fires, token remains in localStorage, user cannot log out on web. Native iOS/Android will work via real OS Alert. Reference: app/(tabs)/courier.tsx:347-368",
+        "testID": "logout-btn",
+        "priority": "HIGH (web preview only; native unaffected)"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {
+        "component": "Alert (react-native)",
+        "issue": "react-native-web does not implement multi-button Alert.alert — fallback is a no-op. Recommend using a custom React Native Modal (already used elsewhere in this screen for profile edit) OR window.confirm() on web for the logout confirmation. Reference: app/(tabs)/courier.tsx:350-358"
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/test_reports/pytest/iteration_20_regression.xml"
+  ],
+  "action_items": [
+    "Replace Alert.alert in logout flow (app/(tabs)/courier.tsx) with either: (a) Platform.OS === 'web' ? window.confirm(...) ? logout() : null : Alert.alert(...) — quickest fix, OR (b) a small in-component Modal with Anuluj/Wyloguj buttons (matches the existing profile-edit modal pattern in the same file). After fix, re-test on web that clicking 'Wyloguj się' → confirming → returns user to /login and clears @gopossible/session_token_v1 from localStorage."
+  ],
+  "critical_code_review_comments": [
+    "frontend/src/gopossible.ts:60-77 — login() maps 401→'Nieprawidłowy login lub hasło' and 403→portal-provided detail or 'Konto czeka na zatwierdzenie'. Clean error taxonomy via PortalError class with status code. Verified live: wrong-password returns 401 from portal and the user sees the correct Polish error.",
+    "frontend/src/authContext.tsx:60-69 — login() trims username before calling portal.login (good defence against accidental trailing whitespace) but NOT password (intentional — passwords may contain leading/trailing whitespace by design). Token + user JSON persisted in parallel via Promise.all to SecureStore/localStorage.",
+    "frontend/src/authContext.tsx:94-108 — useAuthRedirect uses `segments[0] === 'login'` to detect login screen and replace() routes accordingly. Works correctly on both first-mount (no token → /login) and after-login (token + on /login → /).",
+    "frontend/src/secureStorage.ts:11-55 — Platform-aware wrapper. Web → localStorage (synchronous but wrapped in async API), Native → expo-secure-store with try/catch fallback. Failure paths return null/undefined silently which is the correct behaviour for storage that may be reset by the OS.",
+    "frontend/app/(tabs)/index.tsx:133-139 — assignment filter is a Set intersection on courier_route_id ↔ route.id. Falls back to showing all routes when assignments.length===0 (offline / unassigned mode). Verified: 29 local routes, 4 assigned, 4 visible, hint shows 25 hidden.",
+    "frontend/src/hooks/useLocationTracking.ts:60-103 — dual-push to /api/courier/locations (audit) AND portal /api/courier-tracking (live tracking) only when activeRoute.get() returns a routeId. Speed is converted m/s→km/h via *3.6. Web returns 'unsupported' early so we don't spam the GPS API on browsers without user gesture.",
+    "frontend/app/(tabs)/courier.tsx:347-368 — Logout flow uses Alert.alert which is broken on react-native-web. See ui_bugs above."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% (53/53 — iter16 20 tests + iter17 10 tests + iter18 6 tests + iter19 17 tests, all PASS in ~14s)",
+    "frontend": "92% (11/12 user-spec steps PASS — steps 1-10 + 12-token-persistence-on-page-reload all pass. Step 11 'click Wyloguj → redirect to /login' fails on WEB ONLY due to react-native-web Alert.alert being a no-op; native iOS/Android unaffected.)"
+  },
+  "seed_data_creation": "None. Test account 'testtest0gp' / 'Test2026!' already seeded in external portal at form-automator-10.preview.emergentagent.com with 4 assignments (verified live via curl before frontend run). No data was created or modified during testing.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Iteration 20 added GoPossible portal integration: /app/frontend/src/gopossible.ts (login, getMyRoutes, pushTracking client), /app/frontend/src/authContext.tsx (token storage + redirect), /app/frontend/src/secureStorage.ts (cross-platform), /app/frontend/src/activeRoute.ts (route id storage for GPS tagging), /app/frontend/app/login.tsx (login screen), modified _layout.tsx (AuthProvider wrap + useAuthRedirect gate), modified (tabs)/index.tsx (filter routes by assignments + 'PRZYPISANE PRZEZ GoPOSSIBLE: N' banner), modified (tabs)/courier.tsx (user header from auth + logout button), useLocationTracking.ts (dual GPS push). External portal: https://form-automator-10.preview.emergentagent.com — test account testtest0gp/Test2026! with 4 routes 'test1111 · Tester GoPossible' (courier_route_ids: a64a2db4-..., 88cb62ce-..., 3927ac3d-..., 73540267-...). All four IDs exist in local /api/routes (29 routes total). KNOWN ISSUE: logout uses Alert.alert which is a no-op on react-native-web; main agent needs to add Platform-aware fallback OR use a Modal. After fix, re-test ONLY step 11+12 (click Wyloguj → confirm → /login + reload stays on /login). Backend regression suite path: /app/backend/tests/test_iteration{16,17,18,19}*.py — 53 tests in ~14s, all green.",
+  "rca_of_issue": "Logout broken on web preview. RCA: react-native-web (0.19.x bundled with Expo SDK 51+) does NOT polyfill Alert.alert beyond logging to console. The native React Native module on iOS/Android implements multi-button alerts via UIAlertController/AlertDialog, but the web bundle is a no-op. Code path: app/(tabs)/courier.tsx:350 → Alert.alert('Wyloguj się?', ..., [{Anuluj,cancel},{Wyloguj,destructive,onPress:logout}]) → on web this call returns undefined immediately and onPress is never invoked. Reproduction: open /courier on web, scroll to bottom, click data-testid=logout-btn → no dialog appears, localStorage still has @gopossible/session_token_v1. Playwright dialog handler caught 0 dialogs confirming no native confirm()/alert() was triggered. Mitigation (suggested): wrap with Platform.OS === 'web' branch using window.confirm('Wyloguj się?') OR add a small Modal with two TouchableOpacity buttons (matching the existing profile-edit Modal at lines 372-441 of the same file)."
+}

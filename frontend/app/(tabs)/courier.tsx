@@ -20,6 +20,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { api, Route } from "@/src/api";
+import { useAuth } from "@/src/authContext";
 import { colors } from "@/src/theme";
 import { SectionLabel } from "@/src/components/SectionLabel";
 
@@ -40,6 +41,7 @@ const DEFAULT_SETTINGS: Settings = { autoAdvance: true, gpsTracking: true };
 
 export default function CourierScreen() {
   const router = useRouter();
+  const { user, logout } = useAuth();
   const [routes, setRoutes] = useState<Route[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -212,17 +214,19 @@ export default function CourierScreen() {
           <View style={styles.avatarWrap}>
             <View style={styles.avatar}>
               <Text style={styles.avatarText}>
-                {(profile.name.trim()[0] || "K").toUpperCase()}
+                {((user?.name || profile.name).trim()[0] || "K").toUpperCase()}
               </Text>
             </View>
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.headerName} numberOfLines={1}>
-              {profile.name.trim() || "Kurier"}
+              {user?.name?.trim() || profile.name.trim() || "Kurier"}
             </Text>
             <Text style={styles.headerMeta} numberOfLines={1}>
-              {profile.branch.trim() || "Oddział nieustawiony"}
-              {profile.courier_id ? ` • ID ${profile.courier_id}` : ""}
+              {user
+                ? `@${user.username} • ${user.role || "kurier"}`
+                : profile.branch.trim() || "Oddział nieustawiony"}
+              {!user && profile.courier_id ? ` • ID ${profile.courier_id}` : ""}
             </Text>
           </View>
           <TouchableOpacity style={styles.editBtn} onPress={openEditProfile} testID="edit-profile">
@@ -340,6 +344,28 @@ export default function CourierScreen() {
               <Text style={styles.settingSub}>GoPossible Courier 1.0.0</Text>
             </View>
           </View>
+          {user && (
+            <TouchableOpacity
+              style={[styles.settingRow, { borderColor: colors.error }]}
+              onPress={() => {
+                Alert.alert(
+                  "Wyloguj się?",
+                  `Zostaniesz wylogowany z konta @${user.username}. Lokalne ustawienia zostaną zachowane.`,
+                  [
+                    { text: "Anuluj", style: "cancel" },
+                    { text: "Wyloguj", style: "destructive", onPress: logout },
+                  ],
+                );
+              }}
+              testID="logout-btn"
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.settingTitle, { color: colors.error }]}>Wyloguj się</Text>
+                <Text style={styles.settingSub}>Zalogowano jako @{user.username}</Text>
+              </View>
+              <Ionicons name="log-out-outline" size={22} color={colors.error} />
+            </TouchableOpacity>
+          )}
         </View>
       </ScrollView>
 

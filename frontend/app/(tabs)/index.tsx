@@ -16,6 +16,8 @@ import * as DocumentPicker from "expo-document-picker";
 import { Ionicons } from "@expo/vector-icons";
 
 import { api, Route } from "@/src/api";
+import { portal, CourierAssignment, PortalError } from "@/src/gopossible";
+import { useAuth } from "@/src/authContext";
 import { colors } from "@/src/theme";
 import { CodBadge } from "@/src/components/CodBadge";
 import { SectionLabel } from "@/src/components/SectionLabel";
@@ -36,7 +38,9 @@ function blobToBase64(blob: Blob): Promise<string> {
 
 export default function HomeScreen() {
   const router = useRouter();
+  const { token } = useAuth();
   const [routes, setRoutes] = useState<Route[]>([]);
+  const [assignments, setAssignments] = useState<CourierAssignment[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -45,15 +49,31 @@ export default function HomeScreen() {
   const load = useCallback(async () => {
     try {
       setError(null);
-      const data = await api.listRoutes();
-      setRoutes(data);
+      const tasks: Promise<unknown>[] = [api.listRoutes().then(setRoutes)];
+      if (token) {
+        tasks.push(
+          portal.getMyRoutes(token)
+            .then(setAssignments)
+            .catch((e) => {
+              if (e instanceof PortalError && e.status === 401) {
+                // Token expired — handled by AuthProvider on next mount; just clear list.
+                setAssignments([]);
+              } else {
+                console.warn("[portal] my-routes failed", e);
+              }
+            }),
+        );
+      } else {
+        setAssignments([]);
+      }
+      await Promise.all(tasks);
     } catch (e: any) {
       setError(e?.message || "Błąd ładowania tras");
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [token]);
 
   useFocusEffect(
     useCallback(() => {
@@ -104,6 +124,19 @@ export default function HomeScreen() {
     const codCount = r.stops.filter((s) => s.is_cod || s.cod_amount > 0).length;
     return { total, delivered, cod, codCount };
   };
+
+  // Filter visible routes by GoPossible's "my-routes" assignments.
+  // The portal's courier_route_id matches our local route.id 1-to-1, so it's
+  // a straightforward Set intersection. If the courier has no assignments
+  // we fall back to showing everything (so manually-uploaded local routes
+  // still work for offline / unassigned scenarios).
+  const assignedIds = new Set(assignments.map((a) => a.courier_route_id));
+  const visibleRoutes = assignments.length > 0
+    ? routes.filter((r) => assignedIds.has(r.id))
+    : routes;
+  const unassignedCount = assignments.length > 0
+    ? routes.filter((r) => !assignedIds.has(r.id)).length
+    : 0;
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "left", "right"]} testID="home-screen">
@@ -161,21 +194,47 @@ export default function HomeScreen() {
         <View style={styles.center}>
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
-      ) : routes.length === 0 ? (
+      ) : visibleRoutes.length === 0 ? (
         <View style={styles.empty}>
           <Image
             source={{ uri: "https://images.pexels.com/photos/6699401/pexels-photo-6699401.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940" }}
             style={styles.emptyImg}
           />
-          <Text style={styles.emptyTitle}>Brak tras</Text>
-          <Text style={styles.emptyText}>Wgraj manifest PDF, a AI ułoży kolejność dostaw automatycznie.</Text>
+          <Text style={styles.emptyTitle}>
+            {assignments.length === 0 ? "Brak tras" : "Brak przypisanych tras"}
+          </Text>
+          <Text style={styles.emptyText}>
+            {assignments.length === 0
+              ? "Wgraj manifest PDF, a AI ułoży kolejność dostaw automatycznie."
+              : "Dyspozytor w gopossible.pl nie przypisał Ci jeszcze trasy. Po przypisaniu pojawi się tutaj."}
+          </Text>
         </View>
       ) : (
         <FlatList
-          data={routes}
+          data={visibleRoutes}
           keyExtractor={(r) => r.id}
           contentContainerStyle={styles.listContent}
-          ListHeaderComponent={<SectionLabel text="MOJE TRASY" style={styles.listHeader} />}
+          ListHeaderComponent={
+            <View>
+              {assignments.length > 0 && (
+                <View style={styles.assignBanner}>
+                  <Ionicons name="briefcase" size={18} color="#fff" />
+                  <Text style={styles.assignBannerText}>
+                    PRZYPISANE PRZEZ GoPOSSIBLE: {assignments.length}
+                  </Text>
+                </View>
+              )}
+              <SectionLabel
+                text={assignments.length > 0 ? "MOJE PRZYPISANE TRASY" : "MOJE TRASY"}
+                style={styles.listHeader}
+              />
+              {unassignedCount > 0 && (
+                <Text style={styles.unassignedHint}>
+                  Ukrytych {unassignedCount} {unassignedCount === 1 ? "trasa nieprzypisana" : "tras nieprzypisanych"} przez dyspozytora.
+                </Text>
+              )}
+            </View>
+          }
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -255,6 +314,13 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   scanBtnText: { color: colors.text, fontSize: 13, fontWeight: "900", letterSpacing: 0.8 },
+  assignBanner: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    backgroundColor: colors.text, paddingHorizontal: 14, paddingVertical: 10,
+    borderRadius: 10, marginBottom: 10,
+  },
+  assignBannerText: { color: "#fff", fontSize: 12, fontWeight: "900", letterSpacing: 0.8, flex: 1 },
+  unassignedHint: { color: colors.textSecondary, fontSize: 11, marginBottom: 8, fontStyle: "italic" },
   listHeader: { paddingBottom: 12, paddingHorizontal: 4 },
   errorBox: {
     marginHorizontal: 20,

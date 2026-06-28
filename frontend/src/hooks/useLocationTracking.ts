@@ -4,6 +4,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Location from "expo-location";
 
 import { api } from "@/src/api";
+import { portal } from "@/src/gopossible";
+import { activeRoute } from "@/src/activeRoute";
 
 const PROFILE_KEY = "@gopossible/courier_profile_v1";
 const SETTINGS_KEY = "@gopossible/courier_settings_v1";
@@ -64,6 +66,9 @@ export function useLocationTracking() {
         accuracy: Location.Accuracy.Balanced,
       });
       const { latitude, longitude, accuracy, speed, heading, altitude } = pos.coords;
+      const clientTs = new Date(pos.timestamp).toISOString();
+
+      // 1) Internal /api/courier/locations (audit log + backup channel)
       await api.postLocation({
         courier_id: profileRef.current.courier_id || "",
         courier_name: profileRef.current.name || "",
@@ -73,13 +78,26 @@ export function useLocationTracking() {
         speed: speed ?? null,
         heading: heading ?? null,
         altitude: altitude ?? null,
-        client_ts: new Date(pos.timestamp).toISOString(),
+        client_ts: clientTs,
       });
+
+      // 2) GoPossible portal — only when the courier is currently working on
+      //    a specific assigned route (we tag every sample with courier_route_id).
+      const routeId = await activeRoute.get();
+      if (routeId) {
+        await portal.pushTracking({
+          courier_route_id: routeId,
+          lat: latitude,
+          lng: longitude,
+          speed_kmh: speed != null ? Math.max(0, speed) * 3.6 : null,
+          accuracy: accuracy ?? null,
+          courier_name: profileRef.current.name || "",
+        });
+      }
+
       setLastPingAt(new Date().toISOString());
       setStatus("tracking");
     } catch (err) {
-      // Network errors / GPS fix failures should not crash the tab UI.
-      // Stay in "tracking" so we retry on the next tick.
       console.warn("[gps] ping failed", err);
     }
   };

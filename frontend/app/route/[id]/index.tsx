@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   Text,
   View,
@@ -17,6 +17,7 @@ import { colors } from "@/src/theme";
 import { CodBadge } from "@/src/components/CodBadge";
 import { StatusBadge } from "@/src/components/StatusBadge";
 import { RouteMap } from "@/src/components/RouteMap";
+import { activeRoute } from "@/src/activeRoute";
 
 export default function RouteScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -25,6 +26,14 @@ export default function RouteScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Tag this route as "active" so the GPS hook (in app/(tabs)/_layout.tsx) sends
+  // every ping to gopossible.pl with courier_route_id = id. Clear it on unmount
+  // so off-route screens don't accidentally keep pushing.
+  useEffect(() => {
+    if (id) activeRoute.set(id);
+    return () => { activeRoute.clear(); };
+  }, [id]);
 
   const load = useCallback(async () => {
     if (!id) return;
