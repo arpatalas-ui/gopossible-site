@@ -160,13 +160,30 @@ async def deliver_stop(route_id: str, stop_id: str, req: StopDeliverRequest):
             "stops.$.status": "delivered",
             "stops.$.photo_base64": req.photo_base64,
             "stops.$.signature_base64": req.signature_base64,
+            "stops.$.delivery_method": req.delivery_method,
+            "stops.$.note": req.note,
             "stops.$.completed_at": utc_now_iso(),
-            "stops.$.note": None,
         }},
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=404)
     return {"ok": True}
+
+
+@router.post("/geocode")
+async def geocode_address(body: dict):
+    """Forward geocode for the search bar inside the navigation screen.
+
+    Body: `{address: "ul. Wojska Polskiego 81, Szczecin"}`
+    Returns: `{address, lat, lng}` or 404 if the location is not found.
+    """
+    addr = (body.get("address") or "").strip()
+    if not addr:
+        raise HTTPException(status_code=400, detail="Adres nie może być pusty")
+    coords = await geocode_one(addr)
+    if not coords:
+        raise HTTPException(status_code=404, detail="Nie znaleziono adresu")
+    return {"address": addr, "lat": coords[0], "lng": coords[1]}
 
 
 @router.post("/routes/{route_id}/stops/{stop_id}/absent")

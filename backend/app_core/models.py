@@ -25,6 +25,7 @@ class Stop(BaseModel):
     status: str = "pending"  # pending | delivered | absent
     photo_base64: Optional[str] = None
     signature_base64: Optional[str] = None
+    delivery_method: Optional[str] = None  # mailbox | door | neighbor | fence
     note: Optional[str] = None
     completed_at: Optional[str] = None
 
@@ -45,6 +46,8 @@ class ManifestUploadRequest(BaseModel):
 class StopDeliverRequest(BaseModel):
     photo_base64: Optional[str] = None
     signature_base64: Optional[str] = None
+    delivery_method: Optional[str] = None  # mailbox | door | neighbor | fence
+    note: Optional[str] = None
 
 
 class StopAbsentRequest(BaseModel):

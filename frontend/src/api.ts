@@ -61,10 +61,19 @@ export const api = {
     request<{ ok: boolean }>(`/routes/${id}`, { method: "DELETE" }),
   getStop: (routeId: string, stopId: string) =>
     request<Stop>(`/routes/${routeId}/stops/${stopId}`),
-  deliverStop: (routeId: string, stopId: string, body: { photo_base64?: string; signature_base64?: string }) =>
+  deliverStop: (
+    routeId: string,
+    stopId: string,
+    body: { photo_base64?: string; signature_base64?: string; delivery_method?: string; note?: string },
+  ) =>
     request<{ ok: boolean }>(`/routes/${routeId}/stops/${stopId}/deliver`, {
       method: "POST",
       body: JSON.stringify(body),
+    }),
+  geocodeAddress: (address: string) =>
+    request<{ address: string; lat: number; lng: number }>(`/geocode`, {
+      method: "POST",
+      body: JSON.stringify({ address }),
     }),
   absentStop: (routeId: string, stopId: string, body: { note?: string }) =>
     request<{ ok: boolean }>(`/routes/${routeId}/stops/${stopId}/absent`, {

@@ -18,20 +18,31 @@ import { api, Stop } from "@/src/api";
 import { colors } from "@/src/theme";
 import { nextStopPathOrRoute } from "@/src/utils/routeFlow";
 
-type Step = "photo-capture" | "photo-review" | "signature" | "saving";
+type Step = "method" | "photo-capture" | "photo-review" | "signature" | "saving";
+type DeliveryMethod = "mailbox" | "door" | "neighbor" | "fence";
+
+const METHODS: { id: DeliveryMethod; label: string; icon: keyof typeof Ionicons.glyphMap; hint: string; photoRequired: boolean }[] = [
+  { id: "mailbox",  label: "Skrzynka",      icon: "mail",          hint: "Zrób zdjęcie wskazując palcem skrzynkę, do której wrzucasz paczkę", photoRequired: true },
+  { id: "door",     label: "Pod drzwiami",  icon: "home",          hint: "Zrób zdjęcie paczki pozostawionej pod drzwiami",                   photoRequired: true },
+  { id: "fence",    label: "Za płotem",     icon: "barbell",       hint: "Zrób zdjęcie paczki pozostawionej za płotem / w ogrodzeniu",       photoRequired: true },
+  { id: "neighbor", label: "U sąsiada",     icon: "people",        hint: "Poproś sąsiada o podpis. Zdjęcie opcjonalnie",                     photoRequired: false },
+];
 
 export default function DeliverScreen() {
   const { id, stopId } = useLocalSearchParams<{ id: string; stopId: string }>();
   const router = useRouter();
 
   const [stop, setStop] = useState<Stop | null>(null);
-  const [step, setStep] = useState<Step>("photo-capture");
+  const [step, setStep] = useState<Step>("method");
+  const [method, setMethod] = useState<DeliveryMethod | null>(null);
   const [photo, setPhoto] = useState<string | null>(null); // raw base64 (no prefix)
   const [error, setError] = useState<string | null>(null);
 
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView | null>(null);
   const sigRef = useRef<SignatureViewRef | null>(null);
+
+  const methodInfo = method ? METHODS.find((m) => m.id === method) : null;
 
   const loadStop = useCallback(async () => {
     if (!id || !stopId) return;
@@ -68,13 +79,14 @@ export default function DeliverScreen() {
     saveDelivery(sig);
   };
 
-  const saveDelivery = async (sig: string) => {
+  const saveDelivery = async (sig: string | null) => {
     if (!id || !stopId) return;
     setStep("saving");
     try {
       await api.deliverStop(id, stopId, {
         photo_base64: photo || undefined,
-        signature_base64: sig,
+        signature_base64: sig || undefined,
+        delivery_method: method || undefined,
       });
       const nextPath = await nextStopPathOrRoute(id, stopId);
       router.replace(nextPath as Parameters<typeof router.replace>[0]);
@@ -91,6 +103,47 @@ export default function DeliverScreen() {
         <View style={styles.center}>
           {error ? <Text style={styles.errorText}>{error}</Text> : <ActivityIndicator size="large" color={colors.primary} />}
         </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (step === "method") {
+    return (
+      <SafeAreaView style={styles.container} edges={["top"]} testID="method-screen">
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+            <Ionicons name="close" size={28} color={colors.text} />
+          </TouchableOpacity>
+          <Text style={styles.title}>Gdzie zostawiasz paczkę?</Text>
+          <View style={{ width: 36 }} />
+        </View>
+        <Text style={styles.hint}>
+          Wybierz miejsce dostawy — od tego zależy, czy musisz zrobić zdjęcie.
+        </Text>
+        <ScrollView contentContainerStyle={styles.methodGrid}>
+          {METHODS.map((m) => (
+            <TouchableOpacity
+              key={m.id}
+              style={styles.methodCard}
+              onPress={() => {
+                setMethod(m.id);
+                setStep("photo-capture");
+              }}
+              testID={`method-${m.id}`}
+            >
+              <View style={styles.methodIconBox}>
+                <Ionicons name={m.icon} size={28} color={colors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.methodLabel}>{m.label}</Text>
+                <Text style={styles.methodHint}>
+                  {m.photoRequired ? "Wymagane zdjęcie" : "Wymagany podpis sąsiada"}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={22} color={colors.textSecondary} />
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
       </SafeAreaView>
     );
   }
@@ -156,21 +209,25 @@ export default function DeliverScreen() {
           <Text style={styles.title}>Zrób zdjęcie</Text>
           <View style={{ width: 36 }} />
         </View>
-        <Text style={styles.hint}>Zrób zdjęcie miejsca, w którym zostawiono paczkę</Text>
+        <Text style={styles.hint}>{methodInfo?.hint || "Zrób zdjęcie miejsca, w którym zostawiono paczkę"}</Text>
         <View style={styles.cameraWrap}>
           <CameraView ref={cameraRef} style={styles.camera} facing="back" />
         </View>
         <View style={styles.cameraBar}>
-          <TouchableOpacity
-            style={styles.skipBtn}
-            onPress={() => {
-              setPhoto(null);
-              setStep("signature");
-            }}
-            testID="skip-photo-btn"
-          >
-            <Text style={styles.skipText}>Pomiń</Text>
-          </TouchableOpacity>
+          {!methodInfo?.photoRequired ? (
+            <TouchableOpacity
+              style={styles.skipBtn}
+              onPress={() => {
+                setPhoto(null);
+                setStep("signature");
+              }}
+              testID="skip-photo-btn"
+            >
+              <Text style={styles.skipText}>Pomiń</Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={{ width: 64 }} />
+          )}
           <TouchableOpacity style={styles.shutter} onPress={takePhoto} testID="take-photo-btn">
             <View style={styles.shutterInner} />
           </TouchableOpacity>
@@ -273,6 +330,16 @@ body, html { background: #F3F4F6; }
         </View>
 
         {error && <Text style={styles.errorText}>{error}</Text>}
+
+        {method !== "neighbor" && (
+          <TouchableOpacity
+            style={styles.skipSigBtn}
+            onPress={() => saveDelivery(null)}
+            testID="skip-signature-btn"
+          >
+            <Text style={styles.skipSigText}>POMIŃ PODPIS — zapisz dostawę bez podpisu</Text>
+          </TouchableOpacity>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -290,6 +357,20 @@ const styles = StyleSheet.create({
   backBtn: { padding: 8, marginRight: 4 },
   title: { flex: 1, fontSize: 20, fontWeight: "900", color: colors.text, textAlign: "center" },
   hint: { textAlign: "center", color: colors.textSecondary, marginBottom: 8, paddingHorizontal: 20 },
+  methodGrid: { paddingHorizontal: 16, paddingBottom: 24, gap: 10 },
+  methodCard: {
+    flexDirection: "row", alignItems: "center", gap: 12,
+    padding: 14, backgroundColor: colors.card, borderRadius: 14,
+    borderWidth: 1, borderColor: colors.border, marginBottom: 4,
+  },
+  methodIconBox: {
+    width: 48, height: 48, borderRadius: 12, backgroundColor: "#FFEBEE",
+    alignItems: "center", justifyContent: "center",
+  },
+  methodLabel: { fontSize: 16, fontWeight: "900", color: colors.text },
+  methodHint: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+  skipSigBtn: { paddingVertical: 14, alignItems: "center" },
+  skipSigText: { color: colors.textSecondary, fontSize: 12, fontWeight: "800", letterSpacing: 0.5, textDecorationLine: "underline" },
   cameraWrap: { flex: 1, marginHorizontal: 16, borderRadius: 16, overflow: "hidden", backgroundColor: "#000" },
   camera: { flex: 1 },
   cameraBar: {

@@ -1,0 +1,50 @@
+{
+  "summary": "Iteration 21 — delivery_method + /api/geocode tested end-to-end. Backend: 10/10 new tests PASS (geocode happy path returns Szczecin lat≈53.43/lng≈14.55; empty body → 400 'Adres nie może być pusty'; garbage → 404 'Nie znaleziono adresu'; all four delivery_methods mailbox/door/neighbor/fence persisted on Stop and verified via GET; PDF report regression returns 200 with %PDF- magic). Backend regression iter16+17+18+19 = 53/53 PASS in 13s. Frontend (mobile 390x844, real login testtest0gp/Test2026!): method-screen renders all 4 cards with correct testIDs (method-mailbox/door/fence/neighbor) and Polish labels (Skrzynka, Pod drzwiami, Za płotem, U sąsiada); navigate-screen exposes search-address-btn in topBar; tapping it opens a Modal with navigate-search-input + navigate-search-submit; submitting 'Wojska Polskiego 81, Szczecin' triggers /api/geocode → 200, modal closes correctly (Linking.openURL on web is no-op which is expected). FOUND ONE BUG (HIGH): on web preview the camera-permission-screen ALWAYS renders skip-photo-btn regardless of method.photoRequired — so a courier who picks 'Skrzynka' (photo required) but has not granted camera permission can still bypass the photo via 'Pomiń zdjęcie'. The same screen also doesn't show the method-specific hint (e.g. 'wskazując palcem skrzynkę'). This breaks the spec contract 'skip-photo-btn should NOT be visible for mailbox/door/fence'. Note: the camera-screen branch (permission granted) is correct.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "app/route/[id]/stop/[stopId]/deliver.tsx — camera-permission-screen",
+        "issue": "When camera permission is not yet granted, the 'Pomiń zdjęcie' (skip-photo-btn) button is rendered UNCONDITIONALLY at lines 188-197. For methods where photoRequired === true (mailbox, door, fence) this lets the courier bypass the mandatory photo. Also the method-specific hint (METHODS[i].hint, e.g. 'Zrób zdjęcie wskazując palcem skrzynkę...') is only shown on the camera-screen branch (line 212), not on the permission screen — so the user sees a generic 'Aby zrobić zdjęcie miejsca pozostawienia paczki, włącz aparat.' instead. Reference: deliver.tsx:172-201.",
+        "testID": "skip-photo-btn",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration21_delivery_method_geocode.py",
+    "/app/test_reports/pytest/iteration_21.xml",
+    "/app/test_reports/pytest/iteration_21_regression.xml"
+  ],
+  "action_items": [
+    "Fix deliver.tsx camera-permission-screen branch (lines 172-201): wrap the 'Pomiń zdjęcie' TouchableOpacity in a `{!methodInfo?.photoRequired && (...)}` guard, identical to lines 217-230 of the camera-screen branch. Also surface the method hint at the top of the permission screen so the user already knows what is expected (e.g. add `<Text style={styles.hint}>{methodInfo?.hint}</Text>` above the camera icon).",
+    "Consider also hardening the backend: optionally enforce that POST /api/routes/{rid}/stops/{sid}/deliver rejects requests where delivery_method ∈ {mailbox, door, fence} AND photo_base64 is falsy (currently the backend accepts any combination — purely a UX guard, but useful belt-and-suspenders for the photo-required contract)."
+  ],
+  "critical_code_review_comments": [
+    "backend/app_core/routers/routes.py:155-170 — deliver_stop now persists delivery_method + note correctly via $set. Verified by Create→GET pattern for all 4 methods. Schema in models.py:28-29 documents the allowed values as 'mailbox | door | neighbor | fence' — no enum validation in Pydantic though, so any string would pass; consider Literal[...] for strict typing.",
+    "backend/app_core/routers/routes.py:173-186 — POST /api/geocode reuses geocode_one() (LocationIQ). Empty/whitespace-only inputs are correctly stripped and rejected with 400; missing coords return 404. Returns address echo + lat + lng — clean and idiomatic. Could add a length cap (e.g. addr[:300]) before calling out to LocationIQ to prevent abuse, but not blocking.",
+    "frontend/app/route/[id]/stop/[stopId]/navigate.tsx:99-118 — handleSearch correctly trims, calls api.geocodeAddress, builds Platform-specific URI (iOS maps:?daddr, Android geo:, web OSM url) and falls back to an Alert if Linking.openURL rejects. Modal closes on success even before the await of Linking.openURL completes — good UX. Live test confirmed /api/geocode call + modal close.",
+    "frontend/app/route/[id]/stop/[stopId]/deliver.tsx:110-148 — method-screen UI uses METHODS constant cleanly with testIDs `method-${m.id}`. Cards expose photoRequired vs neighbor signature requirement via a sub-label. Tapping setMethod(...) + setStep('photo-capture') is the correct flow.",
+    "frontend/app/route/[id]/stop/[stopId]/deliver.tsx:172-201 — BUG: skip-photo-btn is unconditional on the permission screen (see ui_bugs above). Also the method hint is missing from this branch.",
+    "frontend/app/route/[id]/stop/[stopId]/deliver.tsx:333-342 — 'skip-signature-btn' is correctly hidden when method === 'neighbor' (signature mandatory for neighbor). Good.",
+    "frontend/src/api.ts:64-77 — deliverStop body now optionally includes delivery_method + note. geocodeAddress returns the typed { address, lat, lng } tuple. Both reach the backend as JSON exactly as expected."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration21_delivery_method_geocode.py"
+  ],
+  "success_rate": {
+    "backend": "100% (10/10 new iter21 tests + 53/53 regression — 63/63 total, ~17s wall time)",
+    "frontend": "83% (5/6 spec steps PASS: method-screen render, navigate search button, modal open, geocode call, modal close. Step 2/3 partial — only camera-permission-screen renders on web preview (no real camera), and on that screen skip-photo-btn is unconditionally shown, which is the bug)."
+  },
+  "seed_data_creation": "Used existing route 8c0a5cbe-8372-4ea5-a678-4191b163c10b (167 stops, 163 pending before this run). Backend test moved the first 4 pending stops to delivered status with delivery_method ∈ {mailbox,door,neighbor,fence} and note prefixed 'TEST_iter21_'. Frontend test used a different pending stop (94c9ccc6-...) and never tapped 'Zapisz' so no extra mutation occurred from the UI run. Login via existing GoPossible portal account testtest0gp.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Iteration 21 added: (a) Stop.delivery_method + StopDeliverRequest.delivery_method/note in /app/backend/app_core/models.py, (b) deliver_stop now $sets delivery_method+note, (c) new POST /api/geocode endpoint at routes.py:173-186 (uses geocode_one → LocationIQ), (d) frontend api.deliverStop accepts delivery_method+note, api.geocodeAddress added, (e) deliver.tsx: new initial step 'method' with 4 cards before camera, (f) navigate.tsx: search icon in topBar + Modal with TextInput → /api/geocode → Linking.openURL. Backend test file: /app/backend/tests/test_iteration21_delivery_method_geocode.py — reuses route 8c0a5cbe-... and consumes the first 4 pending stops per run; if rerunning many times use a fresh route or add cleanup. Open bug: deliver.tsx:172-201 permission-screen always renders skip-photo-btn — see action_items. Frontend smoke test verified end-to-end /api/geocode integration on real LocationIQ (returned lat≈53.43, lng≈14.55 for Wojska Polskiego 81, Szczecin).",
+  "rca_of_issue": "Photo-bypass on permission screen. RCA: deliver.tsx camera-screen branch at lines 217-230 correctly gates `skip-photo-btn` behind `!methodInfo?.photoRequired`, but the SIBLING branch at lines 188-197 (rendered when expo-camera reports `permission.granted === false`) renders the same TouchableOpacity unconditionally. On native iOS/Android this is still reachable until the courier taps 'Zezwól na aparat'. Reproduction: open /route/{id}/stop/{sid}/deliver before granting camera permission → tap method-mailbox → permission screen appears with both 'Zezwól na aparat' AND 'Pomiń zdjęcie' → tapping 'Pomiń zdjęcie' calls setPhoto(null); setStep('signature') and the courier completes delivery with NO photo for a method that requires one. Mitigation: wrap the skipBtn TouchableOpacity in `{!methodInfo?.photoRequired && (...)}`, matching the camera-screen branch. Also surface methodInfo.hint at the top of the permission screen so the user understands what photo is expected before granting permission."
+}

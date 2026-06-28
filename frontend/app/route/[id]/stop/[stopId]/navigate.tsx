@@ -7,6 +7,10 @@ import {
   ActivityIndicator,
   ScrollView,
   Linking,
+  Modal,
+  TextInput,
+  Platform,
+  Alert,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -88,6 +92,30 @@ export default function NavigateScreen() {
   const [routeInfo, setRouteInfo] = useState<{ distance: number; duration: number } | null>(null);
   const [steps, setSteps] = useState<RouteStep[]>([]);
   const [stepIndex, setStepIndex] = useState(1); // skip depart
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchAddr, setSearchAddr] = useState("");
+  const [searching, setSearching] = useState(false);
+
+  const handleSearch = async () => {
+    const addr = searchAddr.trim();
+    if (!addr) return;
+    setSearching(true);
+    try {
+      const r = await api.geocodeAddress(addr);
+      const url = Platform.select({
+        ios: `maps:?daddr=${r.lat},${r.lng}&dirflg=d`,
+        android: `geo:0,0?q=${r.lat},${r.lng}(${encodeURIComponent(addr)})`,
+        default: `https://www.openstreetmap.org/?mlat=${r.lat}&mlon=${r.lng}#map=18/${r.lat}/${r.lng}`,
+      }) as string;
+      setSearchOpen(false);
+      setSearchAddr("");
+      Linking.openURL(url).catch(() => Alert.alert("Mapa", `${addr}\n${r.lat.toFixed(5)}, ${r.lng.toFixed(5)}`));
+    } catch (e: any) {
+      Alert.alert("Nie znaleziono", e?.message || "Adres nie został zlokalizowany.");
+    } finally {
+      setSearching(false);
+    }
+  };
   const [error, setError] = useState<string | null>(null);
   const [navigating, setNavigating] = useState(false);
   const [heading, setHeading] = useState<number | null>(null);
@@ -353,6 +381,13 @@ export default function NavigateScreen() {
                 <Ionicons name={follow ? "navigate" : "navigate-outline"} size={22} color={follow ? "#fff" : colors.text} />
               </TouchableOpacity>
             )}
+            <TouchableOpacity
+              onPress={() => setSearchOpen(true)}
+              style={styles.iconBtn}
+              testID="search-address-btn"
+            >
+              <Ionicons name="search" size={22} color={colors.text} />
+            </TouchableOpacity>
           </View>
         </SafeAreaView>
       </View>
@@ -491,6 +526,51 @@ export default function NavigateScreen() {
           </View>
         )}
       </View>
+
+      <Modal visible={searchOpen} transparent animationType="slide" onRequestClose={() => setSearchOpen(false)}>
+        <View style={styles.searchBackdrop}>
+          <SafeAreaView style={styles.searchCard} edges={["bottom"]}>
+            <View style={styles.searchHeader}>
+              <Ionicons name="search" size={22} color={colors.text} />
+              <Text style={styles.searchTitle}>Wyszukaj adres</Text>
+              <TouchableOpacity onPress={() => setSearchOpen(false)}>
+                <Ionicons name="close" size={24} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+            <TextInput
+              value={searchAddr}
+              onChangeText={setSearchAddr}
+              placeholder="np. Wojska Polskiego 81, Szczecin"
+              placeholderTextColor={colors.textSecondary}
+              autoFocus
+              autoCapitalize="none"
+              autoCorrect={false}
+              onSubmitEditing={handleSearch}
+              returnKeyType="search"
+              style={styles.searchInput}
+              testID="navigate-search-input"
+            />
+            <TouchableOpacity
+              style={[styles.searchSubmit, (!searchAddr.trim() || searching) && { opacity: 0.55 }]}
+              onPress={handleSearch}
+              disabled={!searchAddr.trim() || searching}
+              testID="navigate-search-submit"
+            >
+              {searching ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name="navigate-circle" size={20} color="#fff" />
+                  <Text style={styles.searchSubmitText}>  POPROWADŹ MNIE TAM</Text>
+                </>
+              )}
+            </TouchableOpacity>
+            <Text style={styles.searchHint}>
+              Otworzy się Twoja domyślna aplikacja map z trasą do wpisanego adresu.
+            </Text>
+          </SafeAreaView>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -598,4 +678,22 @@ const styles = StyleSheet.create({
   deliveredBtn: { backgroundColor: colors.success },
   absentBtn: { backgroundColor: colors.absent },
   actionText: { color: "#fff", fontWeight: "900", fontSize: 15 },
+  searchBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "flex-end" },
+  searchCard: {
+    backgroundColor: colors.card, borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    paddingHorizontal: 20, paddingTop: 18, paddingBottom: 14, gap: 12,
+  },
+  searchHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
+  searchTitle: { flex: 1, fontSize: 17, fontWeight: "900", color: colors.text },
+  searchInput: {
+    borderWidth: 1, borderColor: colors.border, borderRadius: 12,
+    paddingHorizontal: 14, paddingVertical: 14, fontSize: 15, color: colors.text,
+    backgroundColor: colors.bg,
+  },
+  searchSubmit: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center",
+    backgroundColor: colors.primary, height: 50, borderRadius: 12,
+  },
+  searchSubmitText: { color: "#fff", fontWeight: "900", letterSpacing: 0.6, fontSize: 14 },
+  searchHint: { color: colors.textSecondary, fontSize: 12, textAlign: "center" },
 });
